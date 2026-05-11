@@ -1,0 +1,1 @@
+"""Shared utilities for data loading, logging, and LLM access."""
