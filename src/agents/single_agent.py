@@ -80,8 +80,11 @@ class InvestorAgent(BaseAgent):
         Args:
             use_cache: Whether to use Anthropic prompt caching (recommended:
                        True — the system prompt is long and reused many times).
-            model:     Model identifier. Defaults to Haiku for cost efficiency
-                       during baseline runs and TextGrad optimisation loops.
+            model:     Model identifier. Supports:
+                       - Anthropic: "claude-haiku-4-5-20251001"
+                       - Ollama: "ollama/llama2", "ollama/qwen", etc.
+                       - Others: Per LiteLLM documentation
+                       Defaults to Claude Haiku 4.5 for cost efficiency.
         """
         super().__init__(
             system_prompt=INVESTOR_SYSTEM_PROMPT,
