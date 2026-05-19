@@ -2,7 +2,7 @@
 Base agent class using cached LLM client.
 """
 from pathlib import Path
-from src.utils.llm_client import CachedLLMClient
+from src.utils.litellm_client import CachedLLMClient
 
 
 class BaseAgent:
@@ -13,7 +13,7 @@ class BaseAgent:
         system_prompt: str,
         agent_name: str = "base_agent",
         use_cache: bool = True,
-        model: str = "claude-3-5-sonnet-20241022"
+        model: str = "claude-haiku-4-5-20251001"
     ):
         """
         Initialize base agent.
@@ -21,13 +21,17 @@ class BaseAgent:
         Args:
             system_prompt: System prompt for the agent
             agent_name: Name identifier for the agent
-            use_cache: Whether to use prompt caching
-            model: Model to use
+            use_cache: Whether to use prompt caching (Anthropic only).
+                       Note: Cache is disabled for non-Anthropic models.
+            model: Model identifier.
+                   Anthropic: "claude-haiku-4-5-20251001"
+                   Ollama: "ollama/llama2", "ollama/qwen", etc.
+                   Others: Per LiteLLM documentation
         """
         self.agent_name = agent_name
         self.system_prompt = system_prompt
         self.use_cache = use_cache
-        self.llm_client = CachedLLMClient(model=model)
+        self.llm_client = CachedLLMClient(model=model, use_cache=use_cache)
     
     def call(
         self,
