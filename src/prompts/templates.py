@@ -110,7 +110,6 @@ def format_startup_profile(row: pd.Series) -> str:
     # --- Funding ---
     funding_total = row.get("funding_total_usd")
     funding_rounds = row.get("funding_rounds")
-    funding_round_type = row.get("funding_round_type")
     if pd.notna(funding_total) and float(funding_total) > 0:
         lines.append(f"TOTAL FUNDING: ${float(funding_total):,.0f}")
     elif pd.notna(funding_rounds) and int(funding_rounds) == 0:
