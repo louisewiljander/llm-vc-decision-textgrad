@@ -354,7 +354,7 @@ class CachedLLMClient:
         cost = 0.0
 
         # Input tokens not in cache
-        regular_input = input_tokens - cache_creation_tokens - cache_read_tokens
+        regular_input = max(0, input_tokens - cache_creation_tokens - cache_read_tokens)
         cost += regular_input * (CachedLLMClient.ANTHROPIC_PRICING["input"] / 1_000_000)
 
         # Cache creation (input tokens used to create cache)
