@@ -322,9 +322,18 @@ class CachedLLMClient:
                 input_tokens = getattr(usage, "prompt_tokens", 0)
                 output_tokens = getattr(usage, "completion_tokens", 0)
 
-        # For Ollama/local models, cost is typically 0 (no API charges)
+        # Cost tracking: LiteLLM may attach provider cost metadata for paid APIs.
         cost_usd = 0.0
-
+        if not self.model.startswith("ollama/"):
+            hidden_params = getattr(response, "_hidden_params", None) or {}
+            maybe_cost = hidden_params.get("response_cost", None)
+            if maybe_cost is None:
+                maybe_cost = getattr(response, "response_cost", None)
+            if maybe_cost is not None:
+                try:
+                    cost_usd = float(maybe_cost)
+                except (TypeError, ValueError):
+                    cost_usd = 0.0
         return {
             "content": content,
             "input_tokens": input_tokens,
