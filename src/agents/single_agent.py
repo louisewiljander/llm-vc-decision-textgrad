@@ -80,8 +80,11 @@ class InvestorAgent(BaseAgent):
         Args:
             use_cache: Whether to use Anthropic prompt caching (recommended:
                        True — the system prompt is long and reused many times).
-            model:     Model identifier. Defaults to Haiku for cost efficiency
-                       during baseline runs and TextGrad optimisation loops.
+            model:     Model identifier. Supports:
+                       - Anthropic: "claude-haiku-4-5-20251001"
+                       - Ollama: "ollama/llama2", "ollama/qwen", etc.
+                       - Others: Per LiteLLM documentation
+                       Defaults to Claude Haiku 4.5 for cost efficiency.
         """
         super().__init__(
             system_prompt=INVESTOR_SYSTEM_PROMPT,
@@ -105,11 +108,12 @@ class InvestorAgent(BaseAgent):
             On parse failure, returns {"raw_response": ..., "parse_error": True}.
         """
         user_message = (
-            "Evaluate the following startup profile and respond in JSON only.\n\n"
+            "Evaluate the following startup profile using the framework provided. "
+            "Respond with valid JSON only.\n\n"
             f"{startup_profile}"
         )
 
-        response = self.call(user_message, temperature=0.2, max_tokens=512)
+        response = self.call(user_message, temperature=0.2, max_tokens=2048)
 
         # Strip markdown code fences if present
         text = response.strip()
@@ -126,11 +130,21 @@ class InvestorAgent(BaseAgent):
             result["probability_float"] = result["probability_raw"] / 100.0
             return result
         except json.JSONDecodeError:
-            return {
-                "raw_response": response,
-                "parse_error": True,
-                "probability_float": 0.5,  # fallback — treated as uncertain
-            }
+            # Try to repair incomplete JSON (missing closing brace)
+            repaired = text.strip()
+            if repaired and not repaired.endswith("}"):
+                repaired += "}"
+            try:
+                result = json.loads(repaired)
+                result["probability_raw"] = result.get("probability", 50)
+                result["probability_float"] = result["probability_raw"] / 100.0
+                return result
+            except json.JSONDecodeError:
+                return {
+                    "raw_response": response,
+                    "parse_error": True,
+                    "probability_float": 0.5,  # fallback — treated as uncertain
+                }
 
 
 if __name__ == "__main__":

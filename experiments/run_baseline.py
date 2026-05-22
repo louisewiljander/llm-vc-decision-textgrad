@@ -1,11 +1,12 @@
 """
-Baseline experiment: single InvestorAgent evaluated against the test split.
+Baseline experiment: single InvestorAgent evaluated against a data split.
 
 Usage
 -----
-    python experiments/run_baseline.py              # full test set (10/90)
+    python experiments/run_baseline.py              # train split (for dev/testing)
+    python experiments/run_baseline.py --split val  # val split (balanced, for tuning)
+    python experiments/run_baseline.py --split test # test split (10/90, final eval only)
     python experiments/run_baseline.py --sample 30  # quick smoke test
-    python experiments/run_baseline.py --split val  # evaluate on val set (50/50)
 
 Output
 ------
@@ -25,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.agents.investor import InvestorAgent
+from src.agents.single_agent import InvestorAgent
 from src.evaluation.metrics import compute_metrics, print_metrics
 from src.prompts.templates import format_startup_profile
 from src.utils.data_splits import get_splits
@@ -94,21 +95,26 @@ class _MockInvestorAgent:
 
 
 def run_baseline(
-    split: str = "test",
+    split: str = "train",
     sample: int | None = None,
     random_state: int = 42,
     threshold: float = 0.5,
     offline_smoke: bool = False,
+    model: str = "claude-haiku-4-5-20251001",
 ) -> dict:
     """
     Run the baseline investor agent on the specified data split.
 
     Args:
-        split:        "train", "val", or "test".
+        split:        "train" (default — for development/testing), "val" (for tuning), or "test" (final evaluation only).
         sample:       If set, randomly sample this many rows (for quick tests).
         random_state: Seed — must match get_splits() to avoid data leakage.
         threshold:    Decision threshold for binary classification metrics.
         offline_smoke: If True, use a deterministic mock agent and skip API calls.
+        model:        Model identifier. Supports:
+                      - Anthropic: "claude-haiku-4-5-20251001"
+                      - Ollama: "ollama/llama2", "ollama/qwen", etc.
+                      - Others: Per LiteLLM documentation
 
     Returns:
         Metrics dictionary.
@@ -129,7 +135,9 @@ def run_baseline(
         print(f"\nEvaluating on full '{split}' split ({len(df_eval)} rows).")
 
     # -- Initialise agent ----------------------------------------------------
-    agent = _MockInvestorAgent() if offline_smoke else InvestorAgent(use_cache=True)
+    # Note: prompt caching is only supported by Anthropic models
+    use_cache = model.startswith("claude")
+    agent = _MockInvestorAgent() if offline_smoke else InvestorAgent(use_cache=use_cache, model=model)
 
     # -- Evaluation loop -----------------------------------------------------
     predictions_path = RESULTS_DIR / "predictions.jsonl"
@@ -215,8 +223,8 @@ if __name__ == "__main__":
         description="Run the baseline investor agent experiment."
     )
     parser.add_argument(
-        "--split", choices=["train", "val", "test"], default="test",
-        help="Which data split to evaluate (default: test).",
+        "--split", choices=["train", "val", "test"], default="train",
+        help="Which data split to evaluate (default: train for development; use test for final evaluation only).",
     )
     parser.add_argument(
         "--sample", type=int, default=None,
@@ -234,6 +242,11 @@ if __name__ == "__main__":
         "--offline-smoke", action="store_true",
         help="Run with a deterministic mock investor and no API calls.",
     )
+    parser.add_argument(
+        "--model", type=str, default="ollama/deepseek-r1:1.5b",
+        help="Model identifier. Examples: 'claude-haiku-4-5-20251001' (Anthropic), "
+             "'ollama/llama2' (local Ollama), 'ollama/qwen', etc. (default: Claude Haiku).",
+    )
     args = parser.parse_args()
 
     run_baseline(
@@ -242,4 +255,5 @@ if __name__ == "__main__":
         random_state=args.seed,
         threshold=args.threshold,
         offline_smoke=args.offline_smoke,
+        model=args.model,
     )
