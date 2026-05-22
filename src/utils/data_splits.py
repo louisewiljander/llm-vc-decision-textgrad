@@ -154,7 +154,7 @@ def get_splits(
     remaining_neg = remaining_neg.drop(index=val_neg.index)
 
     # ----------------------------------------------------------------- Train
-    # Undersample majority (success) to balance
+    # Undersample the majority class to balance
     n_train_each = min(len(remaining_pos), len(remaining_neg))
     train_pos = remaining_pos.sample(n=n_train_each, random_state=random_state)
     train_neg = remaining_neg.sample(n=n_train_each, random_state=random_state)
@@ -162,7 +162,8 @@ def get_splits(
         frac=1, random_state=random_state
     )
 
-    n_discarded = len(remaining_pos) - n_train_each
+    # Number of rows discarded from the majority class to enforce balance
+    n_discarded = (len(remaining_pos) + len(remaining_neg)) - (2 * n_train_each)
 
     _print_summary(df_train, df_val, df_test, n_discarded)
 
@@ -185,7 +186,7 @@ def _print_summary(
             f"{n_pos:>4}+ / {n_neg:>4}-  "
             f"({df['target'].mean():.0%} positive)"
         )
-    print(f"  (Success rows discarded from train to enforce balance: {n_discarded})")
+    print(f"  (Rows discarded from train to enforce balance: {n_discarded})")
 
 
 if __name__ == "__main__":
