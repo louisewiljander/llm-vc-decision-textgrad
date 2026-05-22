@@ -7,11 +7,10 @@ Supports multiple model providers:
   - HuggingFace: huggingface/model-name
   - Others: OpenAI, Cohere, Replicate via LiteLLM
 
-Falls back to Anthropic client if LiteLLM unavailable.
-Preserves response logging to SQLite and cost tracking.
+Logs all API calls to CSV and JSON (JSONL) formats.
 """
 import json
-import sqlite3
+import csv
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -50,7 +49,7 @@ class CachedLLMClient:
         self,
         model: str = "claude-haiku-4-5-20251001",
         use_cache: bool = True,
-        log_db_path: Optional[str] = None,
+        log_dir: Optional[str] = None,
     ):
         """
         Initialize the client.
@@ -62,7 +61,7 @@ class CachedLLMClient:
                    - HuggingFace: "huggingface/model-name"
                    - Others: Per LiteLLM documentation
             use_cache: Whether to use prompt caching (Anthropic only).
-            log_db_path: Path to SQLite log database. Defaults to results/logs/api_calls.db.
+            log_dir: Directory for log files (CSV and JSONL). Defaults to results/logs/.
         """
         self.model = model
         self.use_cache = use_cache
@@ -70,12 +69,16 @@ class CachedLLMClient:
         # Parse model provider
         self.provider = self._infer_provider(model)
 
-        # Initialize logging
-        if log_db_path is None:
-            log_db_path = "results/logs/api_calls.db"
-        self.log_db_path = Path(log_db_path)
-        self.log_db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_log_db()
+        # Initialize logging paths
+        if log_dir is None:
+            log_dir = "results/logs"
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.csv_path = self.log_dir / "api_calls.csv"
+        self.jsonl_path = self.log_dir / "api_calls.jsonl"
+        
+        # Initialize CSV header if file doesn't exist
+        self._init_csv_header()
 
         # Initialize API clients
         if self.provider == "anthropic":
@@ -115,31 +118,25 @@ class CachedLLMClient:
             # Default to LiteLLM for unknown models
             return "litellm"
 
-    def _init_log_db(self) -> None:
-        """Initialize SQLite logging database."""
-        conn = sqlite3.connect(self.log_db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS api_calls (
-                id INTEGER PRIMARY KEY,
-                timestamp TEXT,
-                model TEXT,
-                agent_name TEXT,
-                system_prompt_hash TEXT,
-                input_tokens INTEGER,
-                output_tokens INTEGER,
-                cache_creation_input_tokens INTEGER,
-                cache_read_input_tokens INTEGER,
-                total_cost_usd REAL,
-                user_message TEXT,
-                assistant_response TEXT,
-                stop_reason TEXT,
-                error_message TEXT
-            )
-        """)
-        conn.commit()
-        conn.close()
+    def _init_csv_header(self) -> None:
+        """Initialize CSV file with header if it doesn't exist."""
+        if not self.csv_path.exists():
+            with open(self.csv_path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "timestamp",
+                    "model",
+                    "agent_name",
+                    "system_prompt_hash",
+                    "input_tokens",
+                    "output_tokens",
+                    "cache_creation_tokens",
+                    "cache_read_tokens",
+                    "total_cost_usd",
+                    "user_message",
+                    "assistant_response",
+                    "error_message",
+                ])
 
     def call(
         self,
@@ -296,13 +293,34 @@ class CachedLLMClient:
             **kwargs,
         )
 
-        # Extract usage (format varies by provider)
-        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        # Extract content from ModelResponse object (standard LiteLLM format)
+        content = ""
+        input_tokens = 0
+        output_tokens = 0
         
-        # Most providers include usage info
-        usage = response.get("usage", {})
-        input_tokens = usage.get("prompt_tokens", 0)
-        output_tokens = usage.get("completion_tokens", 0)
+        # LiteLLM returns a ModelResponse object with choices
+        if hasattr(response, 'choices') and response.choices:
+            try:
+                message = response.choices[0].message
+                # Try main content field
+                if hasattr(message, 'content') and message.content:
+                    content = message.content
+                # Fallback to reasoning_content (for models like DeepSeek-R1)
+                elif hasattr(message, 'reasoning_content') and message.reasoning_content:
+                    content = message.reasoning_content
+            except (AttributeError, IndexError, TypeError):
+                content = ""
+        
+        # Extract usage info
+        if hasattr(response, 'usage'):
+            usage = response.usage
+            # Handle both dict and object usage formats
+            if isinstance(usage, dict):
+                input_tokens = usage.get("prompt_tokens", 0)
+                output_tokens = usage.get("completion_tokens", 0)
+            else:
+                input_tokens = getattr(usage, "prompt_tokens", 0)
+                output_tokens = getattr(usage, "completion_tokens", 0)
 
         # For Ollama/local models, cost is typically 0 (no API charges)
         cost_usd = 0.0
@@ -358,21 +376,29 @@ class CachedLLMClient:
         cost_usd: float,
         error_message: Optional[str],
     ) -> None:
-        """Log API call to SQLite."""
-        conn = sqlite3.connect(self.log_db_path)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO api_calls (
-                timestamp, model, agent_name, system_prompt_hash,
-                input_tokens, output_tokens, cache_creation_input_tokens,
-                cache_read_input_tokens, total_cost_usd, user_message,
-                assistant_response, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                datetime.utcnow().isoformat(),
+        """Log API call to both CSV and JSONL."""
+        timestamp = datetime.utcnow().isoformat()
+        
+        log_entry = {
+            "timestamp": timestamp,
+            "model": self.model,
+            "agent_name": agent_name,
+            "system_prompt_hash": system_prompt_hash,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_creation_tokens": cache_creation_tokens,
+            "cache_read_tokens": cache_read_tokens,
+            "total_cost_usd": cost_usd,
+            "user_message": user_message,
+            "assistant_response": assistant_response,
+            "error_message": error_message,
+        }
+        
+        # Log to CSV
+        with open(self.csv_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                timestamp,
                 self.model,
                 agent_name,
                 system_prompt_hash,
@@ -381,14 +407,15 @@ class CachedLLMClient:
                 cache_creation_tokens,
                 cache_read_tokens,
                 cost_usd,
-                user_message[:1000],  # Truncate long messages
-                assistant_response[:1000],  # Truncate long responses
+                user_message[:1000],  # Truncate for readability (increased from 500)
+                assistant_response[:2000],  # Truncate for readability (increased from 500)
                 error_message,
-            ),
-        )
-
-        conn.commit()
-        conn.close()
+            ])
+        
+        # Log to JSONL (full messages)
+        with open(self.jsonl_path, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+    
 
     def get_cache_stats(self) -> dict:
         """Get cache and cost statistics."""
@@ -430,23 +457,17 @@ class CachedLLMClient:
         return round(savings, 4)
 
     def get_logs(self, agent_name: Optional[str] = None, limit: int = 50) -> list[dict]:
-        """Retrieve logs from SQLite."""
-        conn = sqlite3.connect(self.log_db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        if agent_name:
-            cursor.execute(
-                "SELECT * FROM api_calls WHERE agent_name = ? ORDER BY timestamp DESC LIMIT ?",
-                (agent_name, limit),
-            )
-        else:
-            cursor.execute(
-                "SELECT * FROM api_calls ORDER BY timestamp DESC LIMIT ?",
-                (limit,),
-            )
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        return [dict(row) for row in rows]
+        """Retrieve logs from JSONL file."""
+        if not self.jsonl_path.exists():
+            return []
+        
+        logs = []
+        with open(self.jsonl_path, "r") as f:
+            for line in f:
+                if line.strip():
+                    log_entry = json.loads(line)
+                    if agent_name is None or log_entry.get("agent_name") == agent_name:
+                        logs.append(log_entry)
+        
+        # Return most recent logs (limit)
+        return logs[-limit:] if len(logs) > limit else logs
