@@ -428,18 +428,10 @@ class CachedLLMClient:
 
     def get_cache_stats(self) -> dict:
         """Get cache and cost statistics."""
-        cache_total_input = (
-            self.cache_stats["total_input_tokens"]
-            + self.cache_stats["cache_created_tokens"]
-            + self.cache_stats["cache_read_tokens"]
-        )
+        total_input = self.cache_stats["total_input_tokens"]
         cache_usage_pct = (
-            (
-                self.cache_stats["cache_read_tokens"]
-                / cache_total_input
-                * 100
-            )
-            if cache_total_input > 0
+            (self.cache_stats["cache_read_tokens"] / total_input * 100)
+            if total_input > 0
             else 0.0
         )
 
