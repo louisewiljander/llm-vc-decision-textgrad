@@ -108,11 +108,12 @@ class InvestorAgent(BaseAgent):
             On parse failure, returns {"raw_response": ..., "parse_error": True}.
         """
         user_message = (
-            "Evaluate the following startup profile and respond in JSON only.\n\n"
+            "Evaluate the following startup profile using the framework provided. "
+            "Respond with valid JSON only.\n\n"
             f"{startup_profile}"
         )
 
-        response = self.call(user_message, temperature=0.2, max_tokens=512)
+        response = self.call(user_message, temperature=0.2, max_tokens=2048)
 
         # Strip markdown code fences if present
         text = response.strip()
@@ -129,11 +130,21 @@ class InvestorAgent(BaseAgent):
             result["probability_float"] = result["probability_raw"] / 100.0
             return result
         except json.JSONDecodeError:
-            return {
-                "raw_response": response,
-                "parse_error": True,
-                "probability_float": 0.5,  # fallback — treated as uncertain
-            }
+            # Try to repair incomplete JSON (missing closing brace)
+            repaired = text.strip()
+            if repaired and not repaired.endswith("}"):
+                repaired += "}"
+            try:
+                result = json.loads(repaired)
+                result["probability_raw"] = result.get("probability", 50)
+                result["probability_float"] = result["probability_raw"] / 100.0
+                return result
+            except json.JSONDecodeError:
+                return {
+                    "raw_response": response,
+                    "parse_error": True,
+                    "probability_float": 0.5,  # fallback — treated as uncertain
+                }
 
 
 if __name__ == "__main__":
