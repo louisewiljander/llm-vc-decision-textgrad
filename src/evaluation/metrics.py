@@ -2,17 +2,19 @@
 Evaluation metrics for startup success prediction.
 
 Mirrors the metric set used in Maarouf et al. (2025):
+  - Average Precision at K (AP@K, primary metric per Liu et al.)
   - Balanced accuracy
   - Precision, Recall, F1
   - AUROC
   - AUCPR
 
-Probabilities are used for threshold-independent metrics (AUROC, AUCPR),
+Probabilities are used for threshold-independent metrics (AUROC, AUCPR, AP@K),
 while binary predictions (using a configurable threshold) are used for
 accuracy, precision, recall, and F1.
 """
 from typing import Optional
 import numpy as np
+import warnings
 
 try:
     from sklearn.metrics import (
@@ -27,6 +29,8 @@ try:
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
+
+from src.evaluation.ap_at_k import compute_ap_at_k
 
 
 def compute_metrics(
@@ -88,16 +92,29 @@ def compute_metrics(
     f1 = f1_score(y_true, y_pred, zero_division=0)
 
     # Confusion matrix
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*y_pred contains classes not in y_true.*"
+        )
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
 
     # Prediction bias: a positive value means the model over-predicts success
     prediction_bias = float(y_prob.mean()) - base_rate
+
+    # AP@K metrics (primary per Liu et al.)
+    ap_metrics = compute_ap_at_k(y_true, y_prob, k_values=[10, 20, 30])
 
     return {
         "n": n,
         "n_positive": n_positive,
         "n_negative": n_negative,
         "base_rate": round(base_rate, 4),
+        # Primary metrics
+        "ap_10": ap_metrics["ap_10"],
+        "ap_20": ap_metrics["ap_20"],
+        "ap_30": ap_metrics["ap_30"],
+        # Secondary metrics
         "auroc": round(auroc, 4),
         "aucpr": round(aucpr, 4),
         "balanced_accuracy": round(bal_acc, 4),
@@ -115,22 +132,27 @@ def compute_metrics(
 
 def print_metrics(metrics: dict, label: str = "Results") -> None:
     """Pretty-print a metrics dictionary."""
-    print(f"\n{'='*50}")
+    print(f"\n{'='*60}")
     print(f"  {label}")
-    print(f"{'='*50}")
+    print(f"{'='*60}")
     print(f"  Dataset:   n={metrics['n']}  "
           f"(+:{metrics['n_positive']}  -:{metrics['n_negative']}  "
           f"base rate: {metrics['base_rate']:.1%})")
-    print(f"  AUROC:     {metrics['auroc']:.4f}")
-    print(f"  AUCPR:     {metrics['aucpr']:.4f}")
-    print(f"  Bal. Acc:  {metrics['balanced_accuracy']:.4f}")
-    print(f"  Precision: {metrics['precision']:.4f}")
-    print(f"  Recall:    {metrics['recall']:.4f}")
-    print(f"  F1:        {metrics['f1']:.4f}")
-    print(f"  Threshold: {metrics['threshold']}")
-    print(f"  TP={metrics['tp']}  FP={metrics['fp']}  "
+    print(f"\n  PRIMARY METRICS (AP@K per Liu et al.):")
+    print(f"    AP@10:     {metrics['ap_10']:.4f}")
+    print(f"    AP@20:     {metrics['ap_20']:.4f}")
+    print(f"    AP@30:     {metrics['ap_30']:.4f}")
+    print(f"\n  SECONDARY METRICS:")
+    print(f"    AUROC:     {metrics['auroc']:.4f}")
+    print(f"    AUCPR:     {metrics['aucpr']:.4f}")
+    print(f"    Bal. Acc:  {metrics['balanced_accuracy']:.4f}")
+    print(f"    Precision: {metrics['precision']:.4f}")
+    print(f"    Recall:    {metrics['recall']:.4f}")
+    print(f"    F1:        {metrics['f1']:.4f}")
+    print(f"\n  THRESHOLD: {metrics['threshold']}")
+    print(f"    TP={metrics['tp']}  FP={metrics['fp']}  "
           f"TN={metrics['tn']}  FN={metrics['fn']}")
     bias = metrics['prediction_bias']
     bias_dir = "over-predicts" if bias > 0 else "under-predicts"
     print(f"  Pred. bias:{bias:+.4f}  ({bias_dir} success)")
-    print(f"{'='*50}\n")
+    print(f"{'='*60}\n")
