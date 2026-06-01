@@ -11,55 +11,18 @@ import json
 from src.agents.base_agent import BaseAgent
 
 
-SYNTHESIZER_SYSTEM_PROMPT = """Imagine you are the chief analyst at a venture capital firm, tasked with  integrating the analyses of multiple specialized teams to provide a comprehensive investment insight. 
-As the chief analyst, you should stay critical of the company and listen  carefully to what your colleagues say. 
-You should not be over confident (or over-critical) for a firm and should rely on your strength of reasoning. 
-Many startups present themselves with good words but the truth is that few will be successful. 
-It is your task to find those that have the potential to be successful and give your recommendations.
+SYNTHESIZER_SYSTEM_PROMPT = """You are the chief analyst at a venture capital firm. You receive evaluation reports from four independent specialist analysts and must synthesize their perspectives into a single investment recommendation.
 
-ROLE:
-You receive evaluations from four independent analysts:
+Stay critical. Most startups will not succeed — your task is to identify the rare exceptions.
+
+ANALYSTS:
 1. Market Analyst (sector, geography, market timing)
 2. Business Model Analyst (revenue model, scalability, capital efficiency)
 3. Feasibility Analyst (product viability, execution, traction)
 4. Team Analyst (founder quality, team composition, credentials)
 
 YOUR TASK:
-Synthesize these four perspectives into a single binary INVEST/PASS decision.
-
-SYNTHESIS RULES:
-
-1. TEAM ANALYST IMPORTANCE:
-   - Research shows that team quality is the strongest predictor of startup success.
-   - Weight the Team Analyst assessment as the primary signal.
-   - If Team Analyst says NOT_PROMISING, this is a strong signal toward PASS unless other signals are exceptionally strong.
-
-2. WEIGHTED VOTING:
-   - Count analyst decisions: How many said PROMISING? How many NOT_PROMISING?
-   - Majority rules: 3+ PROMISING → lean INVEST; 3+ NOT_PROMISING → lean PASS
-   - Tie (2-2): See decision rules below
-
-3. CONFIDENCE AGGREGATION:
-   - Average the four confidence scores
-   - If high confidence disagreement (one analyst high confidence on opposite signal), flag this
-   - Use the aggregated confidence as your probability estimate
-
-4. DECISION RULES:
-   - 4 PROMISING: Strong INVEST (probability 80-95)
-   - 3 PROMISING, 1 NOT: INVEST (probability 65-80), flag the dissent
-   - 2 PROMISING, 2 NOT: Marginal PASS (probability 40-55), detail the tradeoff
-   - 1 PROMISING, 3 NOT: PASS (probability 20-35), flag if one has high confidence
-   - 4 NOT_PROMISING: Strong PASS (probability 5-20)
-
-5. CALIBRATION TO BASE RATE:
-   - In the historical cohort, 57% of startups succeeded.
-   - Your probability should reflect the collective evidence and this base rate.
-   - Avoid extreme probabilities (>95 or <5) unless evidence is overwhelming.
-
-6. CONFLICT RESOLUTION:
-   - If there's a high-confidence dissent (e.g., Team Analyst high-confidence PROMISING but 3 others NOT_PROMISING),
-     acknowledge this in your reasoning.
-   - Such conflicts are valuable signals: they indicate a clear tradeoff.
+Weigh the four analyst reports and produce a single binary INVEST/PASS decision with a calibrated probability of successful exit.
 
 OUTPUT FORMAT:
 Respond with valid JSON only — no markdown, no preamble:
@@ -139,8 +102,16 @@ class SynthesizerAgent(BaseAgent):
             result = json.loads(text.strip())
             return result
         except json.JSONDecodeError:
-            return {
-                "raw_response": response,
-                "parse_error": True,
-                "probability": 50,  # Default to uncertain
-            }
+            # Try to repair incomplete JSON (e.g., missing closing brace)
+            repaired = text.strip()
+            if repaired and not repaired.endswith("}"):
+                repaired += "}"
+            try:
+                result = json.loads(repaired)
+                return result
+            except json.JSONDecodeError:
+                return {
+                    "raw_response": response,
+                    "parse_error": True,
+                    "probability": 50,  # Default to uncertain
+                }
