@@ -27,3 +27,10 @@ Thumbs.db
 
 # Outputs
 results/
+experiments/logs
+notebooks/logs
+/logs
+
+# Tutorial files
+experiments/textgrad_tutorial*
+experiments/tutorials
