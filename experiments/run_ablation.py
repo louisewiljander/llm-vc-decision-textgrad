@@ -1,14 +1,16 @@
 """
-Ablation study: Compare three conditions:
+Ablation study: Compare four conditions:
 1. Random baseline: Uniform random {0, 1} predictions
 2. Single LLM agent: Baseline InvestorAgent
-3. Multi-analyst: 4 specialists + synthesizer (with parallelization)
+3. Multi-analyst: 4 specialists + fixed synthesizer (with parallelization)
+4. TextGrad: 4 specialists + TextGrad-optimized synthesizer
 
 Usage
 -----
     python experiments/run_ablation.py --ablation random --split test
-    python experiments/run_ablation.py --ablation single --model ollama/llama2 --sample 50
-    python experiments/run_ablation.py --ablation multi --model claude-haiku-4-5-20251001 --split val
+    python experiments/run_ablation.py --ablation single --model ollama/glm4:latest --sample 50
+    python experiments/run_ablation.py --ablation multi --model ollama/glm4:latest --split val
+    python experiments/run_ablation.py --ablation textgrad --model ollama/glm4:latest --split test
 
 Output
 ------
@@ -35,9 +37,11 @@ from src.agents.business_model_analyst import BusinessModelAnalyst
 from src.agents.feasibility_analyst import FeasibilityAnalyst
 from src.agents.team_analyst import TeamAnalyst
 from src.agents.synthesizer import SynthesizerAgent
+from src.agents.textgrad_synthesizer import TextGradSynthesizer
 from src.evaluation.metrics import compute_metrics, print_metrics
 from src.prompts.templates import format_startup_profile
 from src.utils.data_splits import get_splits
+from src.utils.archive import archive_old_results
 
 RESULTS_DIR = Path("results/ablation")
 
@@ -223,7 +227,7 @@ def run_single_agent(
         "cache_stats": cache_stats,
     }
 
-    with open(RESULTS_DIR / f"single_{df_eval.name}_{model_name}_run_info.json", "w") as f:
+    with open(RESULTS_DIR / f"single_{split_name}_{model_name}_run_info.json", "w") as f:
         json.dump(run_info, f, indent=2)
 
     print(f"Single agent results saved to {RESULTS_DIR}/")
@@ -265,6 +269,7 @@ def _evaluate_multi_analyst(row_data):
 
 def run_multi_analyst(
     df_eval,
+    split_name: str,
     model: str = "claude-haiku-4-5-20251001",
     random_state: int = 42,
     threshold: float = 0.5,
@@ -274,6 +279,7 @@ def run_multi_analyst(
 
     Args:
         df_eval: DataFrame to evaluate
+        split_name: Name of the dataset split
         model: Model to use for all agents
         random_state: Seed for reproducibility
         threshold: Decision threshold
@@ -284,7 +290,7 @@ def run_multi_analyst(
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     model_name = model.replace("/", "_").replace(".", "_")
-    predictions_path = RESULTS_DIR / f"multi_{df_eval.name}_{model_name}_predictions.jsonl"
+    predictions_path = RESULTS_DIR / f"multi_{split_name}_{model_name}_predictions.jsonl"
     results = []
     errors = 0
 
@@ -366,7 +372,7 @@ def run_multi_analyst(
     print_metrics(metrics, label=f"Multi-Analyst Pipeline — {model}")
 
     # Save outputs
-    with open(RESULTS_DIR / f"multi_{df_eval.name}_{model_name}_metrics.json", "w") as f:
+    with open(RESULTS_DIR / f"multi_{split_name}_{model_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
     # Aggregate cache stats from all agents
@@ -374,7 +380,7 @@ def run_multi_analyst(
     run_info = {
         "timestamp": datetime.utcnow().isoformat(),
         "ablation": "multi",
-        "split": str(df_eval.name),
+        "split": split_name,
         "model": model,
         "n_evaluated": int(len(results)),
         "n_synthesizer_errors": int(errors),
@@ -385,7 +391,7 @@ def run_multi_analyst(
         "cache_stats": cache_stats,
     }
 
-    with open(RESULTS_DIR / f"multi_{df_eval.name}_{model_name}_run_info.json", "w") as f:
+    with open(RESULTS_DIR / f"multi_{split_name}_{model_name}_run_info.json", "w") as f:
         json.dump(run_info, f, indent=2)
 
     print(f"Multi-analyst results saved to {RESULTS_DIR}/")
@@ -396,22 +402,154 @@ def run_multi_analyst(
     return metrics
 
 
+def run_textgrad_multi_analyst(
+    df_eval,
+    split_name: str,
+    model: str = "ollama/glm4:latest",
+    random_state: int = 42,
+    threshold: float = 0.5,
+) -> dict:
+    """
+    TextGrad condition: 4 specialists (in parallel) + TextGrad-optimized synthesizer.
+
+    Loads the optimized prompt from results/textgrad_validation/final_synthesizer_prompt.txt.
+    Falls back to the default synthesizer prompt if that file does not exist.
+
+    Args:
+        df_eval: DataFrame to evaluate
+        split_name: Name of the dataset split
+        model: Model to use for all agents
+        random_state: Seed for reproducibility
+        threshold: Decision threshold
+
+    Returns:
+        Metrics dictionary
+    """
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    model_name = model.replace("/", "_").replace(".", "_")
+    predictions_path = RESULTS_DIR / f"textgrad_{split_name}_{model_name}_predictions.jsonl"
+    results = []
+    errors = 0
+
+    # Initialize agents
+    market_analyst = MarketAnalyst(model=model)
+    biz_analyst = BusinessModelAnalyst(model=model)
+    feasibility_analyst = FeasibilityAnalyst(model=model)
+    team_analyst = TeamAnalyst(model=model)
+    synthesizer = TextGradSynthesizer(model=model)
+
+    analysts = [market_analyst, biz_analyst, feasibility_analyst, team_analyst]
+    analyst_names = ["Market", "Business Model", "Feasibility", "Team"]
+
+    print(f"Running TextGrad multi-analyst pipeline ({model}) on {len(df_eval)} rows...\n")
+    start_time = time.time()
+
+    with open(predictions_path, "w") as f_out:
+        eval_data = [
+            (idx, row, analysts, format_startup_profile(row))
+            for idx, row in df_eval.iterrows()
+        ]
+
+        for i, row_data in enumerate(eval_data):
+            idx, row, profile, assessments = _evaluate_multi_analyst(row_data)
+
+            synthesizer_response = synthesizer.synthesize(profile, assessments)
+
+            n_parse_errors = sum(1 for a in assessments if a.get("parse_error"))
+
+            record = {
+                "object_id": row.get("object_id"),
+                "name": row.get("name"),
+                "target": int(row["target"]),
+                "category_code": row.get("category_code"),
+                "probability_float": synthesizer_response.get("probability", 50) / 100.0,
+                "decision": synthesizer_response.get("decision"),
+                "reasoning": synthesizer_response.get("reasoning"),
+                "parse_error": synthesizer_response.get("parse_error", False),
+                "analyst_assessments": {
+                    name: {
+                        "decision": a.get("decision"),
+                        "confidence": a.get("confidence"),
+                        "rationale": a.get("rationale"),
+                        "parse_error": a.get("parse_error", False),
+                    }
+                    for name, a in zip(analyst_names, assessments)
+                },
+                "synthesizer_num_promising": synthesizer_response.get("num_promising"),
+                "synthesizer_conflicts": synthesizer_response.get("conflicts"),
+            }
+
+            if synthesizer_response.get("parse_error"):
+                errors += 1
+
+            results.append(record)
+            f_out.write(json.dumps(record) + "\n")
+
+            if (i + 1) % 5 == 0 or (i + 1) == len(df_eval):
+                elapsed = time.time() - start_time
+                rate = (i + 1) / elapsed
+                remaining = (len(df_eval) - i - 1) / rate if rate > 0 else 0
+                print(
+                    f"  [{i+1}/{len(df_eval)}]  "
+                    f"elapsed: {elapsed:.0f}s  "
+                    f"est. remaining: {remaining:.0f}s  "
+                    f"synthesizer errors: {errors}"
+                )
+
+    elapsed_total = time.time() - start_time
+
+    y_true = [r["target"] for r in results]
+    y_prob = [r["probability_float"] for r in results]
+
+    metrics = compute_metrics(y_true, y_prob, threshold=threshold)
+    print_metrics(metrics, label=f"TextGrad Multi-Analyst — {model}")
+
+    with open(RESULTS_DIR / f"textgrad_{split_name}_{model_name}_metrics.json", "w") as f:
+        json.dump(metrics, f, indent=2)
+
+    cache_stats = market_analyst.llm_client.get_cache_stats()
+    run_info = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "ablation": "textgrad",
+        "split": split_name,
+        "model": model,
+        "n_evaluated": int(len(results)),
+        "n_synthesizer_errors": int(errors),
+        "elapsed_seconds": float(round(elapsed_total, 1)),
+        "threshold": float(threshold),
+        "random_state": int(random_state),
+        "analysts": analyst_names,
+        "cache_stats": cache_stats,
+    }
+
+    with open(RESULTS_DIR / f"textgrad_{split_name}_{model_name}_run_info.json", "w") as f:
+        json.dump(run_info, f, indent=2)
+
+    print(f"TextGrad results saved to {RESULTS_DIR}/")
+    if cache_stats.get("total_cost_usd", 0) > 0:
+        print(f"  API cost: ${cache_stats['total_cost_usd']:.4f}  "
+              f"(est. cache savings: ${cache_stats.get('estimated_savings_usd', 0):.4f})")
+
+    return metrics
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Ablation study: random baseline vs. single agent vs. multi-analyst"
+        description="Ablation study: random baseline vs. single agent vs. multi-analyst vs. textgrad"
     )
     parser.add_argument(
         "--ablation",
-        choices=["random", "single", "multi"],
+        choices=["random", "single", "multi", "textgrad"],
         required=True,
         help="Which ablation condition to run",
     )
     parser.add_argument(
         "--model",
         type=str,
-        default="claude-haiku-4-5-20251001",
+        default="ollama/glm4:latest",
         help="Model to use (ignored for random baseline). "
-        "Examples: claude-haiku-4-5-20251001, ollama/llama2, ollama/qwen",
+        "Examples: ollama/glm4:latest, claude-haiku-4-5-20251001, ollama/mistral, ollama/qwen",
     )
     parser.add_argument(
         "--split",
@@ -440,6 +578,9 @@ def main():
 
     args = parser.parse_args()
 
+    # Archive previous results to prevent overwrites
+    archive_old_results(RESULTS_DIR)
+
     # Load splits
     df_train, df_val, df_test = get_splits(random_state=args.seed)
     split_map = {"train": df_train, "val": df_val, "test": df_test}
@@ -462,6 +603,10 @@ def main():
         )
     elif args.ablation == "multi":
         metrics = run_multi_analyst(
+            df_eval, split_name=args.split, model=args.model, random_state=args.seed, threshold=args.threshold
+        )
+    elif args.ablation == "textgrad":
+        metrics = run_textgrad_multi_analyst(
             df_eval, split_name=args.split, model=args.model, random_state=args.seed, threshold=args.threshold
         )
 
