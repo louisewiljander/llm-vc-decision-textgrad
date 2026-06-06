@@ -13,7 +13,7 @@ import json
 from src.agents.base_agent import BaseAgent
 
 
-BUSINESS_MODEL_ANALYST_SYSTEM_PROMPT = """You are a business model analyst evaluating a startup's revenue and scalability.
+BUSINESS_MODEL_ANALYST_SYSTEM_PROMPT = """You are a business model analyst at a VC firm evaluating a startup's revenue and scalability.
 
 EVALUATION FOCUS:
 Assess the following dimensions:
@@ -74,7 +74,7 @@ class BusinessModelAnalyst(BaseAgent):
             f"{startup_profile}"
         )
 
-        response = self.call(user_message, temperature=0.2, max_tokens=256)
+        response = self.call(user_message, temperature=0, max_tokens=256)
 
         # Strip markdown if present
         text = response.strip()
@@ -88,7 +88,15 @@ class BusinessModelAnalyst(BaseAgent):
             result = json.loads(text.strip())
             return result
         except json.JSONDecodeError:
-            return {
-                "raw_response": response,
-                "parse_error": True,
-            }
+            # Try to repair incomplete JSON (e.g., missing closing brace)
+            repaired = text.strip()
+            if repaired and not repaired.endswith("}"):
+                repaired += "}"
+            try:
+                result = json.loads(repaired)
+                return result
+            except json.JSONDecodeError:
+                return {
+                    "raw_response": response,
+                    "parse_error": True,
+                }
