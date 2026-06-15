@@ -100,7 +100,7 @@ def run_baseline(
     random_state: int = 42,
     threshold: float = 0.5,
     offline_smoke: bool = False,
-    model: str = "ollama/llama3.2:3b",
+    model: str = "claude-haiku-4-5-20251001",
 ) -> dict:
     """
     Run the baseline investor agent on the specified data split.
@@ -243,7 +243,7 @@ if __name__ == "__main__":
         help="Run with a deterministic mock investor and no API calls.",
     )
     parser.add_argument(
-        "--model", type=str, default="ollama/deepseek-r1:1.5b",
+        "--model", type=str, default="ollama/glm4:latest",
         help="Model identifier. Examples: 'claude-haiku-4-5-20251001' (Anthropic), "
              "'ollama/llama2' (local Ollama), 'ollama/qwen', etc. (default: Claude Haiku).",
     )

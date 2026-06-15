@@ -13,7 +13,7 @@ import json
 from src.agents.base_agent import BaseAgent
 
 
-TEAM_ANALYST_SYSTEM_PROMPT = """You are a team analyst evaluating founder quality and team composition.
+TEAM_ANALYST_SYSTEM_PROMPT = """You are a team analyst at a VC firm evaluating founder quality and team composition.
 
 EVALUATION FOCUS:
 Assess the following dimensions:
@@ -76,7 +76,7 @@ class TeamAnalyst(BaseAgent):
             f"{startup_profile}"
         )
 
-        response = self.call(user_message, temperature=0.2, max_tokens=256)
+        response = self.call(user_message, temperature=0, max_tokens=256)
 
         # Strip markdown if present
         text = response.strip()
@@ -90,7 +90,15 @@ class TeamAnalyst(BaseAgent):
             result = json.loads(text.strip())
             return result
         except json.JSONDecodeError:
-            return {
-                "raw_response": response,
-                "parse_error": True,
-            }
+            # Try to repair incomplete JSON (e.g., missing closing brace)
+            repaired = text.strip()
+            if repaired and not repaired.endswith("}"):
+                repaired += "}"
+            try:
+                result = json.loads(repaired)
+                return result
+            except json.JSONDecodeError:
+                return {
+                    "raw_response": response,
+                    "parse_error": True,
+                }

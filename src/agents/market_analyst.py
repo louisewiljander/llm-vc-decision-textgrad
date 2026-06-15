@@ -13,12 +13,12 @@ import json
 from src.agents.base_agent import BaseAgent
 
 
-MARKET_ANALYST_SYSTEM_PROMPT = """You are a market analyst evaluating a startup's market position and opportunity in 2013.
+MARKET_ANALYST_SYSTEM_PROMPT = """You are a market analyst at a VC firm evaluating a startup's market position and opportunity in 2013.
 
 EVALUATION FOCUS:
 Assess the following dimensions:
 
-1. SECTOR ATTRACTIVENESS: Is this an attractive, growing sector? Are there clear exit opportunities (acquisition targets, IPO potential)?
+1. SECTOR ATTRACTIVENESS: Is this an attractive, growing sector in 2013? Are there clear exit opportunities (acquisition targets, IPO potential)?
 
 2. MARKET SIZE & TIMING: Is the market large enough to support venture-backed returns? Is the company entering at the right time in the market cycle?
 
@@ -73,7 +73,7 @@ class MarketAnalyst(BaseAgent):
             f"{startup_profile}"
         )
 
-        response = self.call(user_message, temperature=0.2, max_tokens=256)
+        response = self.call(user_message, temperature=0, max_tokens=256)
 
         # Strip markdown if present
         text = response.strip()
@@ -87,7 +87,15 @@ class MarketAnalyst(BaseAgent):
             result = json.loads(text.strip())
             return result
         except json.JSONDecodeError:
-            return {
-                "raw_response": response,
-                "parse_error": True,
-            }
+            # Try to repair incomplete JSON (e.g., missing closing brace)
+            repaired = text.strip()
+            if repaired and not repaired.endswith("}"):
+                repaired += "}"
+            try:
+                result = json.loads(repaired)
+                return result
+            except json.JSONDecodeError:
+                return {
+                    "raw_response": response,
+                    "parse_error": True,
+                }
