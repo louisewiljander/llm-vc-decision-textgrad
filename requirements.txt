@@ -2,13 +2,16 @@
 anthropic>=0.25.0
 python-dotenv>=1.0.0
 
+# TextGrad and LLM routing
+textgrad==0.1.8   # pin: engine_experimental module not present in earlier versions
+litellm>=1.40.0   # also a transitive dep of textgrad; explicit for clarity
+# groq package not needed — litellm calls Groq natively via HTTP (just needs GROQ_API_KEY)
+
 # Data processing
 pandas>=2.0.0
 numpy>=1.24.0
 scikit-learn>=1.3.0
-
-# Database
-# sqlite3 is part of the Python standard library
+pyarrow>=14.0.0   # required by pandas for .parquet files
 
 # Utilities
 pyyaml>=6.0
