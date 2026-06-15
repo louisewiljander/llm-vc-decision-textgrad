@@ -27,4 +27,4 @@ Thumbs.db
 
 # Outputs
 results/
-experiments/logs/
+*logs/
