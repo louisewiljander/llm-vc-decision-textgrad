@@ -670,7 +670,8 @@ def run_textgrad_optimization(
             f.write(json.dumps(record) + "\n")
 
     # Save final metrics
-    final_metrics = metrics_log[-1]["val_metrics"]
+    val_records = [r for r in metrics_log if "val_metrics" in r]
+    final_metrics = val_records[-1]["val_metrics"]
     with open(RESULTS_DIR / "final_metrics.json", "w") as f:
         json.dump(final_metrics, f, indent=2)
 
@@ -680,7 +681,7 @@ def run_textgrad_optimization(
 
     # Save prompt evolution
     # Create a mapping from step number to metrics (only validated steps have metrics)
-    metrics_by_step = {record["step"]: record["val_metrics"] for record in metrics_log}
+    metrics_by_step = {record["step"]: record["val_metrics"] for record in val_records}
     
     with open(RESULTS_DIR / "prompt_evolution.json", "w") as f:
         json.dump(
