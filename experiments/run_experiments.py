@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PY = sys.executable
 ABLATION = str(REPO_ROOT / "experiments" / "run_ablation.py")
 TEXTGRAD = str(REPO_ROOT / "experiments" / "run_textgrad.py")
+JUDGE    = str(REPO_ROOT / "experiments" / "run_judge_evaluation.py")
 
 # ── RUN CONFIGURATION ─────────────────────────────────────────────────────────
 MODEL  = "ollama/glm4:latest"
@@ -21,16 +22,19 @@ SPLIT  = "val"    # "train" | "val" | "test"
 SAMPLE = 30       # rows per ablation condition (None = full split)
 N_TRAIN = 4       # TextGrad training steps
 N_VAL   = 30      # examples evaluated after each TextGrad step
+JUDGE_MODEL      = "groq/llama-3.3-70b-versatile"
+N_JUDGE_SAMPLE   = 10      # startups to judge across all three conditions
 # ──────────────────────────────────────────────────────────────────────────────
 
 _sample_args = ["--sample", str(SAMPLE)] if SAMPLE is not None else []
 
 STEPS = [
-    ("Step 1/5 — Random baseline",  [PY, ABLATION, "--ablation", "random",   "--split", SPLIT] + _sample_args),
-    ("Step 2/5 — Single agent",     [PY, ABLATION, "--ablation", "single",   "--split", SPLIT, "--model", MODEL] + _sample_args),
-    ("Step 3/5 — Multi-analyst",    [PY, ABLATION, "--ablation", "multi",    "--split", SPLIT, "--model", MODEL] + _sample_args),
-    ("Step 4/5 — TextGrad training",[PY, TEXTGRAD, "--n_train", str(N_TRAIN), "--n_val", str(N_VAL)]),
-    ("Step 5/5 — TextGrad evaluation", [PY, ABLATION, "--ablation", "textgrad", "--split", SPLIT, "--model", MODEL] + _sample_args),
+    ("Step 1/6 — Random baseline",  [PY, ABLATION, "--ablation", "random",   "--split", SPLIT] + _sample_args),
+    ("Step 2/6 — Single agent",     [PY, ABLATION, "--ablation", "single",   "--split", SPLIT, "--model", MODEL] + _sample_args),
+    ("Step 3/6 — Multi-analyst",    [PY, ABLATION, "--ablation", "multi",    "--split", SPLIT, "--model", MODEL] + _sample_args),
+    ("Step 4/6 — TextGrad training",[PY, TEXTGRAD, "--n_train", str(N_TRAIN), "--n_val", str(N_VAL)]),
+    ("Step 5/6 — TextGrad evaluation", [PY, ABLATION, "--ablation", "textgrad", "--split", SPLIT, "--model", MODEL] + _sample_args),
+    ("Step 6/6 — Judge evaluation", [PY, JUDGE, "--n_sample", str(N_JUDGE_SAMPLE), "--judge_model", JUDGE_MODEL]),
 ]
 
 for label, cmd in STEPS:
@@ -40,4 +44,4 @@ for label, cmd in STEPS:
         print(f"\n✗ Failed at: {label}")
         sys.exit(result.returncode)
 
-print("\n✓ All steps complete. Results in results/ablation/ and results/textgrad_validation/\n")
+print("\n✓ All steps complete. Results in results/ablation/, results/textgrad_validation/, and results/judge_evaluation/\n")

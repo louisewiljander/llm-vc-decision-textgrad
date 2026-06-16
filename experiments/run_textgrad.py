@@ -606,6 +606,7 @@ def run_textgrad_optimization(
             "predicted_probability": pred_prob,
             "prediction_correct": pred_correct,
             "judge_feedback_excerpt": loss.value[:100],
+            "judge_feedback_full": loss.value,
             "prompt_length_before": prompt_before_len,
             "prompt_length_after": prompt_after_len,
             "prompt_length_change": prompt_after_len - prompt_before_len,
