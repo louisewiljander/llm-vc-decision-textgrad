@@ -282,14 +282,21 @@ class CachedLLMClient:
         **kwargs: Any,
     ) -> dict:
         """Call via LiteLLM (supports Ollama, HuggingFace, etc.)."""
+        # CPU inference (Ollama) is slow — cap tokens and use a long timeout.
+        # GPU / API-backed models are unaffected by the cap.
+        is_ollama = self.model.startswith("ollama/")
+        effective_max_tokens = min(max_tokens, 512) if is_ollama else max_tokens
+        timeout = 7200 if is_ollama else 600  # 2 h for CPU, 10 min for APIs
+
         response = litellm.completion(
             model=self.model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            max_tokens=max_tokens,
+            max_tokens=effective_max_tokens,
             temperature=temperature,
+            timeout=timeout,
             **kwargs,
         )
 
