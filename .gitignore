@@ -34,3 +34,6 @@ notebooks/logs
 # Tutorial files
 experiments/textgrad_tutorial*
 experiments/tutorials
+
+# Batch jobs scripts
+*.sh
