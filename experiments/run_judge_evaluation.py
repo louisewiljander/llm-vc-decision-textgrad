@@ -313,7 +313,7 @@ def main():
 
         for condition in ["single", "multi", "textgrad"]:
             import time
-            time.sleep(25)  # Groq free tier: ~6K TPM; prompts are ~3-5K tokens so need ~25s gap
+            time.sleep(65)  # Groq free tier: ~6K TPM; prompts are ~3-5K tokens so need ~25s gap
             pred = preds[condition][object_id]
             analyst_assessments = pred.get("analyst_assessments")
 
