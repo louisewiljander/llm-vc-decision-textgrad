@@ -249,9 +249,35 @@ def main():
                         help="Path to multi-analyst predictions jsonl")
     parser.add_argument("--textgrad", type=str, default=None,
                         help="Path to textgrad predictions jsonl")
+    parser.add_argument("--resume_from", type=str, default=None,
+                        help="Path to an existing judge scores JSONL — skip already-evaluated (startup, condition) pairs")
     args = parser.parse_args()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ─── Load resume state ─────────────────────────────────────────────────────
+    # Keys are (object_id, condition) OR (name, condition) for recovered records
+    # where object_id is unknown.
+    already_done: set[tuple[str, str]] = set()
+    prior_results: list[dict] = []
+    if args.resume_from:
+        resume_path = Path(args.resume_from)
+        if resume_path.exists():
+            with open(resume_path) as f:
+                for line in f:
+                    if line.strip():
+                        rec = json.loads(line)
+                        condition = rec["condition"]
+                        oid = rec.get("object_id")
+                        if oid is not None:
+                            already_done.add((str(oid), condition))
+                        name = rec.get("name")
+                        if name:
+                            already_done.add((name, condition))  # fallback key
+                        prior_results.append(rec)
+            print(f"Resuming from {resume_path} — {len(already_done)} done keys.\n")
+        else:
+            print(f"⚠  --resume_from path not found: {resume_path}\n")
 
     # ─── Locate prediction files ───────────────────────────────────────────────
     print("Locating prediction files...\n")
@@ -300,7 +326,7 @@ def main():
     print(f"Running judge ({args.judge_model}) on {args.n_sample} startups × 3 conditions...\n")
     print("=" * 70)
 
-    results = []
+    results = list(prior_results)  # seed with any resumed results
     dimensions = DIMENSIONS
 
     for object_id in sample_ids:
@@ -308,12 +334,21 @@ def main():
         target = preds["single"][object_id].get("target")
         profile = profile_map.get(object_id, "Profile not available")
 
+        conditions_todo = [
+            c for c in ["single", "multi", "textgrad"]
+            if (str(object_id), c) not in already_done
+            and (startup_name, c) not in already_done
+        ]
+        if not conditions_todo:
+            print(f"\nStartup: {startup_name} — already done, skipping.")
+            continue
+
         print(f"\nStartup: {startup_name} (target={'INVEST' if target == 1 else 'PASS'})")
         print("-" * 70)
 
-        for condition in ["single", "multi", "textgrad"]:
+        for condition in conditions_todo:
             import time
-            time.sleep(65)  # Groq free tier: ~6K TPM; prompts are ~3-5K tokens so need ~25s gap
+            time.sleep(65)  # Groq free tier: ~6K TPM; prompts are ~3-5K tokens each
             pred = preds[condition][object_id]
             analyst_assessments = pred.get("analyst_assessments")
 
@@ -337,6 +372,10 @@ def main():
                     "total_score": sum(scores[dim]["score"] for dim in dimensions),
                 }
                 results.append(record)
+                already_done.add((str(object_id), condition))
+                # Append to incremental file so progress survives a crash
+                with open(incremental_path, "a") as _f:
+                    _f.write(json.dumps(record) + "\n")
 
                 score_str = "  ".join(
                     f"{d.split('_')[0][:4]}={scores[d]['score']}" for d in dimensions
@@ -351,6 +390,9 @@ def main():
 
     import datetime as dt
     timestamp = dt.datetime.now(tz=dt.timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+
+    # Write incremental results (also useful if the run is interrupted)
+    incremental_path = RESULTS_DIR / "judge_scores_incremental.jsonl"
 
     if not results:
         print("\n⚠  No results — no common startups were evaluated.")
