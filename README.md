@@ -196,7 +196,6 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │   ├── test_job.sh                     # Smoke test script
 │   ├── recover_judge_output.py         # Recover partial judge results
 │   └── split_objects_by_entity_type.py # Data preprocessing utility
-├── configs/
 ├── pyproject.toml
 └── requirements.txt
 ```
