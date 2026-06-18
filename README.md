@@ -1,395 +1,290 @@
-# LLM VC Decision - TextGrad Optimization
+# LLM VC Decision — TextGrad Optimization
 
-Optimizing venture capital investment decisions using TextGrad and large language models with prompt caching and comprehensive logging.
+Ablation study comparing LLM-based VC decision-making architectures, with prompt optimization via TextGrad. Built on the 2013 Crunchbase snapshot; evaluated against historical exit outcomes.
 
-## 🎯 Project Goals
+## Project Goals
 
-- Evaluate startup profiles using LLM-based VC agents
-- Optimize agent prompts using TextGrad for improved decision accuracy
-- Track all API calls and costs with prompt caching (~90% token savings)
-- Build reproducible results for research and thesis chapters
+- Compare four decision-making architectures (random baseline → single agent → multi-analyst → TextGrad-optimized)
+- Optimize the synthesizer's system prompt using TextGrad gradient descent
+- Evaluate reasoning quality using an LLM-as-judge grounded in Schumpeter innovation theory
+- Produce reproducible results for a thesis comparing LLM agent architectures for startup evaluation
 
-## 🏗️ Architecture
+## Architecture
 
-### Core Components
+### Four Ablation Conditions
 
-1. **Data Pipeline** (`notebooks/data_processing.ipynb`)
-   - Process 2013 Crunchbase snapshot data
-   - Feature engineering with team aggregation
-   - Anonymization and leakage detection
-   - Dynamic university ranking integration
+| Condition | Description |
+|-----------|-------------|
+| `random` | Uniform random predictions — lower bound baseline |
+| `single` | Single `InvestorAgent` evaluates each startup end-to-end |
+| `multi` | Four specialist analysts (parallel) → fixed `SynthesizerAgent` |
+| `textgrad` | Four specialist analysts (parallel) → TextGrad-optimized `TextGradSynthesizer` |
 
-2. **Agents** (`src/agents/`)
-   - **InvestorAgent**: Evaluates startups and provides recommendations
-   - **JudgeAgent**: Reviews investor decisions for bias
-   - Both use cached system prompts for cost efficiency
+### Multi-Analyst Pipeline (conditions `multi` and `textgrad`)
 
-3. **Caching & Logging** (`src/utils/`)
-   - **LLMClient**: Anthropic API with prompt caching
-   - **APILogger**: SQLite-based response logging and analysis
-   - Cost tracking and cache performance metrics
+```
+Startup Profile
+      │
+      ├──────────────────────────────────────────┐
+      │ (parallel)                               │
+      ▼                                          ▼
+MarketAnalyst   BusinessModelAnalyst   FeasibilityAnalyst   TeamAnalyst
+      │                │                      │                 │
+      └────────────────┴──────────────────────┴─────────────────┘
+                                   │
+                                   ▼
+                        SynthesizerAgent  ← fixed prompt (multi)
+                     TextGradSynthesizer  ← optimized prompt (textgrad)
+                                   │
+                              INVEST / PASS
+                          probability 0–100
+```
 
-4. **Experiments** (`experiments/`)
-   - Baseline evaluation pipeline
-   - TextGrad optimization runs
-   - Hyperparameter sweeps
+### TextGrad Optimization
 
-## 🚀 Quick Start
+The synthesizer's system prompt is the learnable variable. TextGrad trains it on a small set of cached analyst assessments using an LLM-as-judge loss:
+
+```
+Cached analyst assessments
+        │
+        ▼
+  SynthesizerModel(prompt=tg.Variable, requires_grad=True)
+        │
+        ▼
+  Binary decision + probability
+        │
+        ▼
+  LLM Judge  ← compares decision to ground-truth label, writes textual gradient
+        │
+        ▼
+  TextualGradientDescent → rewrites synthesizer prompt
+```
+
+- **Forward model** (synthesizer): `ollama/glm4:latest` (local, cheaper)
+- **Backward model** (gradient generator): `groq/llama-3.3-70b-versatile` (stronger instruction-following)
+
+### Judge Evaluation
+
+Post-hoc qualitative scoring with `groq/llama-3.3-70b-versatile` as judge. Six dimensions, each scored 1–5:
+
+1. Product novelty (Schumpeter type 1)
+2. Market opportunity (Schumpeter type 3)
+3. Feasibility (Schumpeter type 2)
+4. Team quality (Gompers et al. 2020)
+5. Reasoning coherence
+6. Risk identification
+
+## Quick Start
 
 ### 1. Setup
 
 ```bash
-# Clone and enter directory
 cd llm-vc-decision-textgrad
 
-# Create virtual environment
 python -m venv .venv
 source .venv/bin/activate
 
-# Install the project and its runtime dependencies
 pip install -e .
 ```
 
-### 2. Configure API Key
+### 2. Configure API Keys
 
 ```bash
-# Add Anthropic API key to .env
-echo "ANTHROPIC_API_KEY=sk-ant-..." >> .env
+# .env file at repo root
+GROQ_API_KEY=gsk_...          # required for judge + TextGrad backward pass
+ANTHROPIC_API_KEY=sk-ant-...  # optional — if running Claude models via LiteLLM
 ```
 
-### 3. Test Caching & Logging
+Ollama must be running locally for `ollama/glm4:latest` (the default forward model):
+```bash
+ollama serve
+ollama pull glm4
+```
+
+### 3. Run the Full Pipeline
 
 ```bash
-# Run quick start to verify setup
-python scripts/quickstart.py
-
-# Or run full example pipeline
-python scripts/example_caching_logging.py
+# Run all 6 steps: random → single → multi → TextGrad train → TextGrad eval → judge
+python experiments/run_experiments.py
 ```
 
-## 💾 Prompt Caching
+Edit the `RUN CONFIGURATION` block at the top of `run_experiments.py` to control sample sizes, models, and step counts.
 
-### Key Features
+### 4. Run Individual Steps
 
-- **90% token cost savings** on system prompts after first use
-- **Automatic tracking** of cache creation and read tokens
-- **5-minute cache window** for prompt variants
-- **Cost calculation** included in all logs
+```bash
+# Random baseline
+python experiments/run_ablation.py --ablation random --split val
 
-### How It Works
+# Single agent (any LiteLLM-compatible model)
+python experiments/run_ablation.py --ablation single --model ollama/glm4:latest --split val --sample 50
 
-```python
-from src.agents.investor import InvestorAgent
+# Multi-analyst pipeline
+python experiments/run_ablation.py --ablation multi --model ollama/glm4:latest --split val
 
-# Initialize agent (system prompt will be cached)
-investor = InvestorAgent(use_cache=True)
+# TextGrad training
+python experiments/run_textgrad.py --n_train 4 --n_val 30
 
-# First call: prompt cached (25% cost)
-# Subsequent calls: read from cache (10% cost)
-result = investor.evaluate_startup(profile)
+# TextGrad ablation evaluation (uses optimized prompt from results/)
+python experiments/run_ablation.py --ablation textgrad --model ollama/glm4:latest --split val
 
-# Monitor savings
-stats = investor.llm_client.get_cache_stats()
-print(f"Cache savings: ${stats['estimated_savings_usd']:.2f}")
+# LLM-as-judge evaluation
+python experiments/run_judge_evaluation.py --n_sample 10 --judge_model groq/llama-3.3-70b-versatile
 ```
 
-### Example Savings
+## Evaluation Metrics
 
-For a 500-token system prompt with 10 evaluations:
-- **Without caching**: 10 × $0.0015 = $0.015
-- **With caching**: $0.001875 + (9 × $0.00015) = $0.002625
-- **Savings**: ~82%
+Primary metric: **Average Precision at K** (AP@K, per Liu et al. 2026), capturing how well the model ranks successful startups in the top-K predictions.
 
-## 📊 Response Logging
+| Metric | Description |
+|--------|-------------|
+| AP@10 / AP@20 / AP@30 | Primary: precision of top-K ranked predictions |
+| AUROC | Threshold-independent discrimination |
+| Balanced accuracy | Corrects for class imbalance |
+| Precision / Recall / F1 | At default threshold of 0.5 |
+| AUCPR | Area under precision-recall curve |
 
-All API calls are logged to `results/logs/api_calls.db`:
+All metrics are computed by `src/evaluation/metrics.py`.
 
-```python
-from src.utils.logging import APILogger
-
-logger = APILogger()
-
-# View summary
-logger.print_summary(agent_name="investor")
-
-# Get logs as DataFrame
-df = logger.get_dataframe(hours=24)
-
-# Analyze costs
-breakdown = logger.cost_breakdown()
-print(f"Total cost: ${breakdown['total_cost']:.4f}")
-```
-
-### Logged Fields
-
-- Timestamp, model, agent name
-- Input/output tokens + cache metrics
-- Full request and response text
-- Calculated cost per Anthropic pricing
-- Error messages (if any)
-
-### Database Schema
-
-```sql
-CREATE TABLE api_calls (
-    id INTEGER PRIMARY KEY,
-    timestamp TEXT,
-    model TEXT,
-    agent_name TEXT,
-    system_prompt_hash TEXT,
-    input_tokens INTEGER,
-    output_tokens INTEGER,
-    cache_creation_input_tokens INTEGER,
-    cache_read_input_tokens INTEGER,
-    total_cost_usd REAL,
-    user_message TEXT,
-    assistant_response TEXT,
-    stop_reason TEXT,
-    error_message TEXT
-)
-```
-
-## 📁 Directory Structure
+## Directory Structure
 
 ```
-├── notebooks/
-│   ├── data_processing.ipynb      # Data pipeline and feature engineering
-│   ├── agent_data_quality_audit.ipynb  # Data quality verification
-│   └── analysis.ipynb             # Results analysis
+├── experiments/
+│   ├── run_experiments.py      # Orchestrator: runs all 6 pipeline steps
+│   ├── run_ablation.py         # Single ablation condition (random/single/multi/textgrad)
+│   ├── run_textgrad.py         # TextGrad synthesizer prompt optimization
+│   ├── run_judge_evaluation.py # LLM-as-judge post-hoc evaluation
+│   ├── legacy/                 # Archived older scripts
+│   ├── tutorials/              # TextGrad tutorial scripts
+│   └── logs/                   # Experiment run logs
 ├── src/
 │   ├── agents/
-│   │   ├── base_agent.py          # Base agent with caching
-│   │   ├── investor.py            # Investor evaluation agent
-│   │   └── judge.py               # Judge review agent
-│   ├── utils/
-│   │   ├── llm_client.py          # Cached LLM client + logging
-│   │   └── logging.py             # Log analysis utilities
+│   │   ├── base_agent.py               # LiteLLM wrapper with caching
+│   │   ├── single_agent.py             # InvestorAgent (single condition)
+│   │   ├── market_analyst.py           # Specialist: market & sector
+│   │   ├── business_model_analyst.py   # Specialist: revenue model & scalability
+│   │   ├── feasibility_analyst.py      # Specialist: product & execution
+│   │   ├── team_analyst.py             # Specialist: founding team
+│   │   ├── synthesizer.py              # Fixed synthesizer (multi condition)
+│   │   └── textgrad_synthesizer.py     # Optimized synthesizer (textgrad condition)
+│   ├── evaluation/
+│   │   ├── metrics.py          # AP@K, AUROC, balanced accuracy, F1, AUCPR
+│   │   └── ap_at_k.py          # AP@K implementation
 │   ├── prompts/
-│   │   ├── investor_prompt.txt
-│   │   └── judge_prompt.txt
-│   └── textgrad/
-│       ├── optimizer.py
-│       └── feedback_parser.py
-├── experiments/
-│   ├── run_baseline.py            # Baseline evaluation
-│   ├── run_textgrad.py            # TextGrad optimization
-│   └── sweep.py                   # Hyperparameter sweep
-├── data/
-│   ├── raw/                       # Crunchbase CSVs
-│   └── processed/                 # Parquet output
-├── scripts/
-│   ├── quickstart.py              # Verify setup
-│   ├── example_caching_logging.py # Full pipeline demo
-│   └── split_objects_by_entity_type.py
+│   │   └── templates.py        # Startup profile formatter
+│   └── utils/
+│       ├── llm_client.py       # Anthropic client with caching + SQLite logging
+│       ├── litellm_client.py   # LiteLLM client (used by agents)
+│       ├── data_splits.py      # Reproducible train/val/test splits
+│       ├── archive.py          # Result archiving utility
+│       └── logging.py          # Log analysis utilities
+├── notebooks/
+│   ├── data_processing.ipynb           # Crunchbase data pipeline
+│   ├── agent_data_quality_audit.ipynb  # Data quality checks
+│   ├── analysis.ipynb                  # Results analysis
+│   ├── output_overview.ipynb           # Predictions overview
+│   ├── reasoning_explorer.ipynb        # Qualitative reasoning inspection
+│   ├── textgrad_visualization.ipynb    # TextGrad prompt evolution plots
+│   └── colab_experiment.ipynb          # Colab-compatible experiment runner
 ├── results/
-│   ├── logs/api_calls.db          # All API calls logged here
+│   ├── ablation/               # Per-condition predictions, metrics, run info
+│   ├── textgrad_validation/    # TextGrad training logs, prompts, cached assessments
+│   ├── judge_evaluation/       # LLM-as-judge scores
+│   ├── baseline/               # Legacy baseline results
 │   ├── metrics/
-│   └── plots/
-├── tests/
-│   └── test_agents.py
+│   └── logs/
+├── scripts/
+│   ├── run_vc_experiment.sh            # Shell wrapper for experiment runs
+│   ├── test_job.sh                     # Smoke test script
+│   ├── recover_judge_output.py         # Recover partial judge results
+│   └── split_objects_by_entity_type.py # Data preprocessing utility
+├── data/
+│   ├── raw/                    # Crunchbase CSVs (not committed)
+│   └── processed/              # Parquet output
 ├── configs/
-│   ├── base.yaml
-│   └── agents.yaml
-├── CACHING_AND_LOGGING.md         # Detailed caching/logging guide
-├── README.md                      # This file
+├── tests/
+├── pyproject.toml
 └── requirements.txt
 ```
 
-## 🔧 Core Files
+## Output Files
 
-### `src/utils/llm_client.py`
-Centralized LLM client with:
-- Prompt caching via `cache_control: {"type": "ephemeral"}`
-- Automatic response logging to SQLite
-- Cost calculation per Anthropic pricing
-- Cache statistics and performance metrics
+Each ablation run writes three files to `results/ablation/`:
 
-### `src/agents/base_agent.py`
-Base class for all agents:
-- Wraps `CachedLLMClient`
-- Handles system prompt caching
-- Provides `call()` interface
-- Exposes cache statistics
+| File | Contents |
+|------|----------|
+| `{condition}_{split}_{model}_predictions.jsonl` | Per-startup predictions + analyst assessments |
+| `{condition}_{split}_{model}_metrics.json` | Full metric suite |
+| `{condition}_{split}_{model}_run_info.json` | Run metadata, timing, cache stats |
 
-### `src/utils/logging.py`
-Log analysis utilities:
-- Query logs as pandas DataFrame
-- Print summaries and recent calls
-- Cost breakdown by agent/time
-- Statistics and savings calculation
+TextGrad writes to `results/textgrad_validation/`:
 
-## 📈 Experiments
+| File | Contents |
+|------|----------|
+| `final_synthesizer_prompt.txt` | Optimized prompt (loaded by TextGradSynthesizer) |
+| `metrics_per_step.jsonl` | Per-step training + validation metrics |
+| `prompt_evolution.json` | Prompt length + metrics at each validated step |
+| `prompt_step_N.txt` | Checkpoint prompts for resume |
+| `cached_assessments/` | Pre-computed analyst assessments (JSON per startup) |
 
-### Baseline (`experiments/run_baseline.py`)
-Evaluate agents without optimization:
+Judge evaluation writes to `results/judge_evaluation/`:
+
+| File | Contents |
+|------|----------|
+| `judge_scores_{timestamp}.jsonl` | Per-startup, per-condition scores on 6 dimensions |
+| `judge_summary_{timestamp}.json` | Mean scores by condition |
+| `judge_scores_incremental.jsonl` | Incremental file written during run (crash-safe) |
+
+## Resuming Interrupted Runs
+
+TextGrad training saves a checkpoint after each step. Resume with:
+
 ```bash
-python experiments/run_baseline.py --config configs/base.yaml
+python experiments/run_textgrad.py --n_train 10 --n_val 30 --resume_from_step 3
 ```
 
-### TextGrad Optimization (`experiments/run_textgrad.py`)
-Optimize prompts using TextGrad:
+Judge evaluation can also resume from a partial JSONL:
+
 ```bash
-python experiments/run_textgrad.py \
-    --baseline_results results/baseline.json \
-    --num_iterations 5
+python experiments/run_judge_evaluation.py \
+    --resume_from results/judge_evaluation/judge_scores_incremental.jsonl
 ```
 
-### Results
-All results logged to `results/`:
-- `metrics/` - Performance metrics
-- `plots/` - Visualizations
-- `logs/api_calls.db` - All API calls
+## Running on Colab
 
-## 📚 Documentation
+See `notebooks/colab_experiment.ipynb` and `scripts/run_vc_experiment.sh`. The pipeline supports Google Drive sync — set `DRIVE_RESULTS` in `run_experiments.py`.
 
-- **[CACHING_AND_LOGGING.md](CACHING_AND_LOGGING.md)** - Complete guide to prompt caching and response logging
-- **[data_processing.ipynb](notebooks/data_processing.ipynb)** - Data pipeline walkthrough
-- **[agent_data_quality_audit.ipynb](notebooks/agent_data_quality_audit.ipynb)** - Data quality checks
-
-## 🔍 Monitoring
-
-### Check Cache Performance
-```python
-from src.agents.investor import InvestorAgent
-
-agent = InvestorAgent(use_cache=True)
-stats = agent.llm_client.get_cache_stats()
-
-print(f"Total calls: {stats['total_calls']}")
-print(f"Cache usage: {stats['cache_usage_percentage']:.1f}%")
-print(f"Savings: ${stats['estimated_savings_usd']:.4f}")
-```
-
-### View Recent API Calls
-```bash
-python -c "from src.utils.logging import APILogger; APILogger().print_recent(5)"
-```
-
-### Cost Analysis
-```python
-from src.utils.logging import APILogger
-
-logger = APILogger()
-df = logger.get_dataframe()
-
-# By agent
-print(df.groupby('agent_name')['total_cost_usd'].sum())
-
-# Timeline
-print(df.groupby(df['timestamp'].str[:10])['total_cost_usd'].sum())
-```
-
-## 🛠️ Development
+## Development
 
 ### Running Tests
+
 ```bash
 pytest tests/ -v
 ```
 
-### Linting
+### Model Selection
+
+Any LiteLLM-compatible model string works for the analyst and synthesizer agents. The judge and TextGrad backward pass are tested with `groq/llama-3.3-70b-versatile`.
+
 ```bash
-black src/ scripts/
-flake8 src/ scripts/
+# Local Ollama
+--model ollama/glm4:latest
+
+# Claude via Anthropic
+--model claude-haiku-4-5-20251001
+
+# Groq
+--model groq/llama-3.3-70b-versatile
 ```
 
-### Adding New Agents
-1. Extend `BaseAgent` in `src/agents/`
-2. Define system prompt with cache support
-3. Implement agent-specific methods
-4. Logs will work automatically
+## References
 
-## 📊 For Your Thesis
+- Maarouf et al. (2025) — startup success prediction metric framework
+- Wang et al. (2025) — LLM over-prediction bias in VC settings
+- Gompers et al. (2020) — VC decision criteria, team quality emphasis
+- Yuksekgonul et al. (2025) — TextGrad: Automatic Differentiation via Text
+- Liu et al. — AP@K as primary ranking metric
 
-### Methodology Section
-Use logged data to show:
-- Prompt engineering approach
-- API call statistics
-- Cost analysis and efficiency gains
-- Cache performance metrics
+## License
 
-### Results Section
-Include:
-- Agent performance metrics
-- TextGrad optimization improvements
-- Cost comparisons (baseline vs optimized)
-- Cache usage statistics
-
-### Appendix
-Export logs for analysis:
-```python
-df = APILogger().get_dataframe()
-df.to_csv('appendix_api_logs.csv')
-```
-
-## ⚙️ Configuration
-
-### Environment Variables (`.env`)
-```
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...        # Optional, for future use
-AZURE_OPENAI_API_KEY=...     # Optional, for future use
-```
-
-### .gitignore
-```
-.env                          # API keys (never commit)
-.venv/                        # Virtual environment
-results/logs/api_calls.db    # Optional: exclude large logs
-data/**/*.csv                # Raw data (optional)
-```
-
-## 🐛 Troubleshooting
-
-### Missing API Key
-```bash
-# Check .env file exists and has ANTHROPIC_API_KEY
-cat .env
-
-# Add if missing
-echo "ANTHROPIC_API_KEY=sk-ant-..." >> .env
-```
-
-### Cache Not Working
-```python
-# Check if caching is enabled
-agent = InvestorAgent(use_cache=True)  # Must be True
-
-# Verify cache stats
-stats = agent.llm_client.get_cache_stats()
-if stats['cache_read_tokens'] == 0:
-    print("Cache warming up - make more calls to see benefits")
-```
-
-### Database Errors
-```python
-# Reset logs (if corrupted)
-import os
-os.remove('results/logs/api_calls.db')
-# Will recreate on next call
-```
-
-## 📖 References
-
-- [Anthropic Docs - Prompt Caching](https://docs.anthropic.com/docs/build-a-chatbot#token-counting)
-- [Anthropic Pricing](https://www.anthropic.com/pricing/claude)
-- [TextGrad Paper](https://arxiv.org/abs/2401.08546)
-
-## 📝 Citation
-
-If using this code, please cite:
-
-```bibtex
-@thesis{llm-vc-decision,
-  title={Optimizing VC Investment Decisions with TextGrad and LLMs},
-  author={Your Name},
-  year={2026}
-}
-```
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
----
-
-**Questions?** Check [CACHING_AND_LOGGING.md](CACHING_AND_LOGGING.md) for detailed documentation.
+MIT License — see LICENSE file for details.

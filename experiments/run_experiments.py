@@ -2,10 +2,14 @@
 End-to-end pipeline. Runs all four ablation conditions and TextGrad optimization.
 
     python experiments/run_experiments.py
+    python experiments/run_experiments.py --exclude 1 2   # skip steps 1 and 2
+    python experiments/run_experiments.py --exclude 4 5   # skip TextGrad steps
 
 Edit the RUN CONFIGURATION block below to control sample sizes and training steps.
 For more granular control, call run_ablation.py and run_textgrad.py directly.
 """
+import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +19,22 @@ PY = sys.executable
 ABLATION = str(REPO_ROOT / "experiments" / "run_ablation.py")
 TEXTGRAD = str(REPO_ROOT / "experiments" / "run_textgrad.py")
 JUDGE    = str(REPO_ROOT / "experiments" / "run_judge_evaluation.py")
+
+# ── GOOGLE DRIVE SYNC ─────────────────────────────────────────────────────────
+# Set to your Drive results path when running on Colab; None to skip.
+DRIVE_RESULTS = None  # e.g. "/content/drive/MyDrive/llm-vc-decision-textgrad/results"
+
+def sync_to_drive(step_label: str) -> None:
+    if not DRIVE_RESULTS:
+        return
+    src = REPO_ROOT / "results"
+    dst = Path(DRIVE_RESULTS)
+    try:
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+        print(f"  ✓ Synced results to Drive after: {step_label}")
+    except Exception as e:
+        print(f"  ⚠  Drive sync failed ({e}) — continuing anyway")
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ── RUN CONFIGURATION ─────────────────────────────────────────────────────────
 MODEL  = "ollama/glm4:latest"
@@ -26,22 +46,36 @@ JUDGE_MODEL      = "groq/llama-3.3-70b-versatile"
 N_JUDGE_SAMPLE   = 10      # startups to judge across all three conditions
 # ──────────────────────────────────────────────────────────────────────────────
 
+parser = argparse.ArgumentParser(description="Run end-to-end experiment pipeline.")
+parser.add_argument(
+    "--exclude", nargs="+", type=int, metavar="N",
+    help="Step numbers to skip (1-6). E.g. --exclude 1 2",
+    default=[],
+)
+args = parser.parse_args()
+excluded_steps = set(args.exclude)
+
 _sample_args = ["--sample", str(SAMPLE)] if SAMPLE is not None else []
 
 STEPS = [
-    ("Step 1/6 — Random baseline",  [PY, ABLATION, "--ablation", "random",   "--split", SPLIT] + _sample_args),
-    ("Step 2/6 — Single agent",     [PY, ABLATION, "--ablation", "single",   "--split", SPLIT, "--model", MODEL] + _sample_args),
-    ("Step 3/6 — Multi-analyst",    [PY, ABLATION, "--ablation", "multi",    "--split", SPLIT, "--model", MODEL] + _sample_args),
-    ("Step 4/6 — TextGrad training",[PY, TEXTGRAD, "--n_train", str(N_TRAIN), "--n_val", str(N_VAL)]),
-    ("Step 5/6 — TextGrad evaluation", [PY, ABLATION, "--ablation", "textgrad", "--split", SPLIT, "--model", MODEL] + _sample_args),
-    ("Step 6/6 — Judge evaluation", [PY, JUDGE, "--n_sample", str(N_JUDGE_SAMPLE), "--judge_model", JUDGE_MODEL]),
+    (1, "Step 1/6 — Random baseline",       [PY, ABLATION, "--ablation", "random",   "--split", SPLIT] + _sample_args),
+    (2, "Step 2/6 — Single agent",          [PY, ABLATION, "--ablation", "single",   "--split", SPLIT, "--model", MODEL] + _sample_args),
+    (3, "Step 3/6 — Multi-analyst",         [PY, ABLATION, "--ablation", "multi",    "--split", SPLIT, "--model", MODEL] + _sample_args),
+    (4, "Step 4/6 — TextGrad training",     [PY, TEXTGRAD, "--n_train", str(N_TRAIN), "--n_val", str(N_VAL)]),
+    (5, "Step 5/6 — TextGrad evaluation",   [PY, ABLATION, "--ablation", "textgrad", "--split", SPLIT, "--model", MODEL] + _sample_args),
+    (6, "Step 6/6 — Judge evaluation",      [PY, JUDGE, "--n_sample", str(N_JUDGE_SAMPLE), "--judge_model", JUDGE_MODEL]),
 ]
 
-for label, cmd in STEPS:
+for step_num, label, cmd in STEPS:
+    if step_num in excluded_steps:
+        print(f"\n{'='*60}\n  {label}  [SKIPPED]\n{'='*60}\n")
+        continue
     print(f"\n{'='*60}\n  {label}\n{'='*60}\n")
     result = subprocess.run(cmd, cwd=REPO_ROOT)
     if result.returncode != 0:
         print(f"\n✗ Failed at: {label}")
+        sync_to_drive(f"{label} (partial — failed)")
         sys.exit(result.returncode)
+    sync_to_drive(label)
 
 print("\n✓ All steps complete. Results in results/ablation/, results/textgrad_validation/, and results/judge_evaluation/\n")
