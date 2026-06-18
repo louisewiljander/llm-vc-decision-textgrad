@@ -1,6 +1,6 @@
-# LLM VC Decision — TextGrad Optimization
+# LLM-based Multi-Agent VC Decision Simulation — TextGrad Optimization
 
-Ablation study comparing LLM-based VC decision-making architectures, with prompt optimization via TextGrad. Built on the 2013 Crunchbase snapshot; evaluated against historical exit outcomes.
+An ablation study comparing LLM-based VC decision-making architectures, with prompt optimization via TextGrad. Built on the 2013 Crunchbase snapshot; evaluated against historical exit outcomes.
 
 ## Project Goals
 
@@ -28,13 +28,13 @@ Startup Profile
       ├──────────────────────────────────────────┐
       │ (parallel)                               │
       ▼                                          ▼
-MarketAnalyst   BusinessModelAnalyst   FeasibilityAnalyst   TeamAnalyst
+Market Analyst   Business Model Analyst   Feasibility Analyst   Team Analyst
       │                │                      │                 │
       └────────────────┴──────────────────────┴─────────────────┘
                                    │
                                    ▼
-                        SynthesizerAgent  ← fixed prompt (multi)
-                     TextGradSynthesizer  ← optimized prompt (textgrad)
+                        Synthesizer Agent  ← fixed prompt (multi)
+                     TextGrad Synthesizer  ← optimized prompt (textgrad)
                                    │
                               INVEST / PASS
                           probability 0–100
@@ -60,7 +60,7 @@ Cached analyst assessments
   TextualGradientDescent → rewrites synthesizer prompt
 ```
 
-- **Forward model** (synthesizer): `ollama/glm4:latest` (local, cheaper)
+- **Forward model** (synthesizer): `ollama/glm4:latest` (local, free)
 - **Backward model** (gradient generator): `groq/llama-3.3-70b-versatile` (stronger instruction-following)
 
 ### Judge Evaluation
@@ -154,9 +154,8 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │   ├── run_ablation.py         # Single ablation condition (random/single/multi/textgrad)
 │   ├── run_textgrad.py         # TextGrad synthesizer prompt optimization
 │   ├── run_judge_evaluation.py # LLM-as-judge post-hoc evaluation
-│   ├── legacy/                 # Archived older scripts
-│   ├── tutorials/              # TextGrad tutorial scripts
-│   └── logs/                   # Experiment run logs
+│   └── legacy/                 # Archived older scripts
+
 ├── src/
 │   ├── agents/
 │   │   ├── base_agent.py               # LiteLLM wrapper with caching
@@ -173,7 +172,7 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │   ├── prompts/
 │   │   └── templates.py        # Startup profile formatter
 │   └── utils/
-│       ├── llm_client.py       # Anthropic client with caching + SQLite logging
+│       ├── llm_client.py       # Anthropic client 
 │       ├── litellm_client.py   # LiteLLM client (used by agents)
 │       ├── data_splits.py      # Reproducible train/val/test splits
 │       ├── archive.py          # Result archiving utility
@@ -182,10 +181,9 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │   ├── data_processing.ipynb           # Crunchbase data pipeline
 │   ├── agent_data_quality_audit.ipynb  # Data quality checks
 │   ├── analysis.ipynb                  # Results analysis
-│   ├── output_overview.ipynb           # Predictions overview
-│   ├── reasoning_explorer.ipynb        # Qualitative reasoning inspection
-│   ├── textgrad_visualization.ipynb    # TextGrad prompt evolution plots
-│   └── colab_experiment.ipynb          # Colab-compatible experiment runner
+│   ├── output_overview.ipynb           # Predictions overview 
+│   ├── reasoning_explorer.ipynb        # Qualitative reasoning inspection (WIP)
+│   └── textgrad_visualization.ipynb    # TextGrad prompt evolution plots (WIP)
 ├── results/
 │   ├── ablation/               # Per-condition predictions, metrics, run info
 │   ├── textgrad_validation/    # TextGrad training logs, prompts, cached assessments
@@ -198,11 +196,7 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │   ├── test_job.sh                     # Smoke test script
 │   ├── recover_judge_output.py         # Recover partial judge results
 │   └── split_objects_by_entity_type.py # Data preprocessing utility
-├── data/
-│   ├── raw/                    # Crunchbase CSVs (not committed)
-│   └── processed/              # Parquet output
 ├── configs/
-├── tests/
 ├── pyproject.toml
 └── requirements.txt
 ```
