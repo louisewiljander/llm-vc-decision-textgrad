@@ -46,7 +46,7 @@ SPLIT  = "val"    # "train" | "val" | "test"
 SAMPLE = 30       # rows per ablation condition (None = full split)
 N_TRAIN = 4       # TextGrad training steps
 N_VAL   = 30      # examples evaluated after each TextGrad step
-JUDGE_MODEL      = "ollama/deepseek-r1:14b"
+JUDGE_MODEL      = "ollama/deepseek-r1:32b"
 N_JUDGE_SAMPLE   = 10      # startups to judge across all three conditions
 JUDGE_SLEEP      = 0       # seconds between judge calls (set to 65 for Groq free tier)
 # ──────────────────────────────────────────────────────────────────────────────

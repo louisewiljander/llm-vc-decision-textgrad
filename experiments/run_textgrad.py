@@ -69,7 +69,7 @@ from src.utils.archive import archive_old_results
 RESULTS_DIR = Path("results/textgrad_validation")
 EXPERIMENTS_LOG_DIR = Path(__file__).resolve().parent / "logs"
 MODEL_NAME = "ollama/glm4:latest"              # Forward model: synthesizer during TextGrad training + analyst assessments
-BACKWARD_MODEL_NAME = "ollama/deepseek-r1:14b"          # Backward model: generates textual gradients (needs stronger instruction-following than forward)
+BACKWARD_MODEL_NAME = "ollama/deepseek-r1:32b"          # Backward model: generates textual gradients (needs stronger instruction-following than forward)
 
 # Configure logging to experiments/logs/
 EXPERIMENTS_LOG_DIR.mkdir(parents=True, exist_ok=True)
