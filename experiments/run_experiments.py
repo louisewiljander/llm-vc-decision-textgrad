@@ -16,6 +16,10 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.utils.data_splits import get_splits
 PY = sys.executable
 ABLATION = str(REPO_ROOT / "experiments" / "run_ablation.py")
 TEXTGRAD = str(REPO_ROOT / "experiments" / "run_textgrad.py")
@@ -24,6 +28,22 @@ JUDGE    = str(REPO_ROOT / "experiments" / "run_judge_evaluation.py")
 # ── GOOGLE DRIVE SYNC ─────────────────────────────────────────────────────────
 # Set to your Drive results path when running on Colab; None to skip.
 DRIVE_RESULTS = None  # e.g. "/content/drive/MyDrive/llm-vc-decision-textgrad/results"
+
+def print_split_verification(seed: int) -> None:
+    df_train, df_val, df_test = get_splits(random_state=seed)
+    split_map = {"train": df_train, "val": df_val, "test": df_test}
+    df = split_map[SPLIT]
+    if SAMPLE is not None:
+        df = df.sample(min(SAMPLE, len(df)), random_state=seed)
+    invest = df[df["target"] == 1]
+    pass_  = df[df["target"] == 0]
+    print(f"  Split : {SPLIT}  |  seed={seed}  |  n={len(df)} ({len(invest)} INVEST / {len(pass_)} PASS)")
+    print(f"  {'object_id':<14}  {'name':<40}  label")
+    print(f"  {'-'*14}  {'-'*40}  -----")
+    for _, row in df.sort_values("target", ascending=False).iterrows():
+        label = "INVEST" if row["target"] == 1 else "PASS"
+        print(f"  {str(row['object_id']):<14}  {str(row['name']):<40}  {label}")
+
 
 def sync_to_drive(step_label: str) -> None:
     if not DRIVE_RESULTS:
@@ -71,6 +91,12 @@ for seed_idx, seed in enumerate(seeds):
     seed_label = f"Seed {seed_idx + 1}/{len(seeds)} (seed={seed})"
     if multi_seed:
         print(f"\n{'#'*60}\n  {seed_label}\n{'#'*60}")
+
+    print(f"\n{'─'*60}")
+    print(f"  Split verification (ablation steps 1–3, 5)")
+    print(f"{'─'*60}")
+    print_split_verification(seed)
+    print(f"{'─'*60}\n")
 
     # Per-seed output dirs: results/seed_<N>/... when running multiple seeds,
     # otherwise fall back to the default paths (backward compatible).
