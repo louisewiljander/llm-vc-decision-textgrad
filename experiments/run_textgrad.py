@@ -69,7 +69,7 @@ from src.utils.archive import archive_old_results
 RESULTS_DIR = Path("results/textgrad_validation")
 EXPERIMENTS_LOG_DIR = Path(__file__).resolve().parent / "logs"
 MODEL_NAME = "ollama/glm4:latest"              # Forward model: synthesizer during TextGrad training + analyst assessments
-BACKWARD_MODEL_NAME = "groq/llama-3.3-70b-versatile"   # Backward model: generates textual gradients (needs stronger instruction-following than forward)
+BACKWARD_MODEL_NAME = "ollama/deepseek-r1:14b"          # Backward model: generates textual gradients (needs stronger instruction-following than forward)
 
 # Configure logging to experiments/logs/
 EXPERIMENTS_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -366,6 +366,7 @@ def run_textgrad_optimization(
     seed: int = 42,
     validate_every: int = 1,
     resume_from_step: Optional[int] = None,
+    output_dir: Path = RESULTS_DIR,
 ) -> None:
     """
     Main TextGrad optimization loop.
@@ -383,7 +384,7 @@ def run_textgrad_optimization(
     print("TextGrad Synthesizer Optimization")
     print("=" * 70)
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # ─── Load data ────────────────────────────────────────────────────────────
     print("\n[PHASE 1: Data Preparation & Caching]")
@@ -406,13 +407,13 @@ def run_textgrad_optimization(
         "val_object_ids": df_val["object_id"].tolist(),
         "seed": seed,
     }
-    with open(RESULTS_DIR / "data_splits.json", "w") as f:
+    with open(output_dir / "data_splits.json", "w") as f:
         json.dump(split_info, f, indent=2)
 
     # ─── Cache assessments ─────────────────────────────────────────────────────
     print("Checking cache for multi-agent assessments...\n")
 
-    cache_dir = RESULTS_DIR / "cached_assessments"
+    cache_dir = output_dir / "cached_assessments"
     train_cache_ok = check_cache_exists(df_train, cache_dir)
     val_cache_ok = check_cache_exists(df_val, cache_dir)
 
@@ -451,11 +452,11 @@ def run_textgrad_optimization(
 
     # Load starting prompt — either from a checkpoint or from the default
     if resume_from_step is not None:
-        checkpoint_file = RESULTS_DIR / f"prompt_step_{resume_from_step}.txt"
+        checkpoint_file = output_dir / f"prompt_step_{resume_from_step}.txt"
         if not checkpoint_file.exists():
             raise FileNotFoundError(
                 f"Cannot resume: {checkpoint_file} not found. "
-                f"Available steps: {sorted(int(f.stem.split('_')[-1]) for f in RESULTS_DIR.glob('prompt_step_*.txt'))}"
+                f"Available steps: {sorted(int(f.stem.split('_')[-1]) for f in output_dir.glob('prompt_step_*.txt'))}"
             )
         starting_prompt = checkpoint_file.read_text()
         print(f"✓ Resuming from step {resume_from_step} ({checkpoint_file.name}, {len(starting_prompt)} chars)\n")
@@ -657,7 +658,7 @@ def run_textgrad_optimization(
         })
 
         # Save intermediate results
-        with open(RESULTS_DIR / f"prompt_step_{step}.txt", "w") as f:
+        with open(output_dir / f"prompt_step_{step}.txt", "w") as f:
             f.write(synthesizer_prompt.value)
 
     # ─── Phase 3: Compile results ─────────────────────────────────────────────
@@ -666,25 +667,25 @@ def run_textgrad_optimization(
     print("=" * 70)
 
     # Save metrics log
-    with open(RESULTS_DIR / "metrics_per_step.jsonl", "w") as f:
+    with open(output_dir / "metrics_per_step.jsonl", "w") as f:
         for record in metrics_log:
             f.write(json.dumps(record) + "\n")
 
     # Save final metrics
     val_records = [r for r in metrics_log if "val_metrics" in r]
     final_metrics = val_records[-1]["val_metrics"]
-    with open(RESULTS_DIR / "final_metrics.json", "w") as f:
+    with open(output_dir / "final_metrics.json", "w") as f:
         json.dump(final_metrics, f, indent=2)
 
     # Save final prompt
-    with open(RESULTS_DIR / "final_synthesizer_prompt.txt", "w") as f:
+    with open(output_dir / "final_synthesizer_prompt.txt", "w") as f:
         f.write(synthesizer_prompt.value)
 
     # Save prompt evolution
     # Create a mapping from step number to metrics (only validated steps have metrics)
     metrics_by_step = {record["step"]: record["val_metrics"] for record in val_records}
-    
-    with open(RESULTS_DIR / "prompt_evolution.json", "w") as f:
+
+    with open(output_dir / "prompt_evolution.json", "w") as f:
         json.dump(
             {
                 "steps": [
@@ -700,8 +701,8 @@ def run_textgrad_optimization(
             f,
             indent=2,
         )
-   
-    print(f"\nResults saved to: {RESULTS_DIR}/")
+
+    print(f"\nResults saved to: {output_dir}/")
     print(f"  - metrics_per_step.jsonl: Metrics after each training step")
     print(f"  - final_metrics.json: Final validation metrics")
     print(f"  - final_synthesizer_prompt.txt: Optimized prompt")
@@ -749,12 +750,19 @@ def main():
             "Use with the same --n_train and --seed as the original run."
         ),
     )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=None,
+        help="Directory to write results (default: results/textgrad_validation)",
+    )
 
     args = parser.parse_args()
+    output_dir = Path(args.output_dir) if args.output_dir else RESULTS_DIR
 
     # Only archive previous results on a fresh run, not on resume
     if args.resume_from_step is None:
-        archive_old_results(RESULTS_DIR)
+        archive_old_results(output_dir)
 
     run_textgrad_optimization(
         n_train=args.n_train,
@@ -762,6 +770,7 @@ def main():
         seed=args.seed,
         validate_every=args.validate_every,
         resume_from_step=args.resume_from_step,
+        output_dir=output_dir,
     )
 
 
