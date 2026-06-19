@@ -6,9 +6,6 @@ End-to-end pipeline. Runs all four ablation conditions and TextGrad optimization
     python experiments/run_experiments.py --exclude 4 5        # skip TextGrad steps
     python experiments/run_experiments.py --seeds 42 123 456   # run three seeds
 
-Each seed writes to results/seed_<N>/{ablation,textgrad_validation,judge_evaluation}/.
-A single seed (default) writes to the standard results/ directories unchanged.
-
 Edit the RUN CONFIGURATION block below to control sample sizes and training steps.
 For more granular control, call run_ablation.py and run_textgrad.py directly.
 """
