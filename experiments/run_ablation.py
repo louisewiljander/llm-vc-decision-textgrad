@@ -71,6 +71,7 @@ def run_random_baseline(
     split_name: str,
     random_state: int = 42,
     threshold: float = 0.5,
+    output_dir: Path = RESULTS_DIR,
 ) -> dict:
     """
     Random baseline: Uniform random predictions.
@@ -84,10 +85,10 @@ def run_random_baseline(
     Returns:
         Metrics dictionary
     """
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     random.seed(random_state)
 
-    predictions_path = RESULTS_DIR / f"random_{split_name}_predictions.jsonl"
+    predictions_path = output_dir / f"random_{split_name}_predictions.jsonl"
     results = []
 
     print(f"Running random baseline on {len(df_eval)} rows...\n")
@@ -133,11 +134,11 @@ def run_random_baseline(
     print_metrics(metrics, label="Random Baseline")
 
     # Save outputs
-    with open(RESULTS_DIR / f"random_{split_name}_metrics.json", "w") as f:
+    with open(output_dir / f"random_{split_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
     sector_metrics = compute_sector_metrics(results, threshold=threshold)
-    with open(RESULTS_DIR / f"random_{split_name}_sector_metrics.json", "w") as f:
+    with open(output_dir / f"random_{split_name}_sector_metrics.json", "w") as f:
         json.dump(sector_metrics, f, indent=2)
 
     run_info = {
@@ -151,10 +152,10 @@ def run_random_baseline(
         "random_state": int(random_state),
     }
 
-    with open(RESULTS_DIR / f"random_{split_name}_run_info.json", "w") as f:
+    with open(output_dir / f"random_{split_name}_run_info.json", "w") as f:
         json.dump(run_info, f, indent=2)
 
-    print(f"Random baseline saved to {RESULTS_DIR}/")
+    print(f"Random baseline saved to {output_dir}/")
 
     return metrics
 
@@ -165,6 +166,7 @@ def run_single_agent(
     model: str = "claude-haiku-4-5-20251001",
     random_state: int = 42,
     threshold: float = 0.5,
+    output_dir: Path = RESULTS_DIR,
 ) -> dict:
     """
     Single LLM agent baseline: InvestorAgent.
@@ -179,10 +181,10 @@ def run_single_agent(
     Returns:
         Metrics dictionary
     """
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     model_name = model.replace("/", "_").replace(".", "_")
-    predictions_path = RESULTS_DIR / f"single_{split_name}_{model_name}_predictions.jsonl"
+    predictions_path = output_dir / f"single_{split_name}_{model_name}_predictions.jsonl"
     results = []
     errors = 0
 
@@ -234,11 +236,11 @@ def run_single_agent(
     print_metrics(metrics, label=f"Single Agent — {model}")
 
     # Save outputs
-    with open(RESULTS_DIR / f"single_{split_name}_{model_name}_metrics.json", "w") as f:
+    with open(output_dir / f"single_{split_name}_{model_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
     sector_metrics = compute_sector_metrics(results, threshold=threshold)
-    with open(RESULTS_DIR / f"single_{split_name}_{model_name}_sector_metrics.json", "w") as f:
+    with open(output_dir / f"single_{split_name}_{model_name}_sector_metrics.json", "w") as f:
         json.dump(sector_metrics, f, indent=2)
 
     cache_stats = agent.llm_client.get_cache_stats()
@@ -255,10 +257,10 @@ def run_single_agent(
         "cache_stats": cache_stats,
     }
 
-    with open(RESULTS_DIR / f"single_{split_name}_{model_name}_run_info.json", "w") as f:
+    with open(output_dir / f"single_{split_name}_{model_name}_run_info.json", "w") as f:
         json.dump(run_info, f, indent=2)
 
-    print(f"Single agent results saved to {RESULTS_DIR}/")
+    print(f"Single agent results saved to {output_dir}/")
     if cache_stats.get("total_cost_usd", 0) > 0:
         print(f"  API cost: ${cache_stats['total_cost_usd']:.4f}  "
               f"(est. cache savings: ${cache_stats.get('estimated_savings_usd', 0):.4f})")
@@ -301,6 +303,7 @@ def run_multi_analyst(
     model: str = "claude-haiku-4-5-20251001",
     random_state: int = 42,
     threshold: float = 0.5,
+    output_dir: Path = RESULTS_DIR,
 ) -> dict:
     """
     Multi-analyst pipeline: 4 specialists (in parallel) + synthesizer.
@@ -315,10 +318,10 @@ def run_multi_analyst(
     Returns:
         Metrics dictionary
     """
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     model_name = model.replace("/", "_").replace(".", "_")
-    predictions_path = RESULTS_DIR / f"multi_{split_name}_{model_name}_predictions.jsonl"
+    predictions_path = output_dir / f"multi_{split_name}_{model_name}_predictions.jsonl"
     results = []
     errors = 0
 
@@ -400,11 +403,11 @@ def run_multi_analyst(
     print_metrics(metrics, label=f"Multi-Analyst Pipeline — {model}")
 
     # Save outputs
-    with open(RESULTS_DIR / f"multi_{split_name}_{model_name}_metrics.json", "w") as f:
+    with open(output_dir / f"multi_{split_name}_{model_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
     sector_metrics = compute_sector_metrics(results, threshold=threshold)
-    with open(RESULTS_DIR / f"multi_{split_name}_{model_name}_sector_metrics.json", "w") as f:
+    with open(output_dir / f"multi_{split_name}_{model_name}_sector_metrics.json", "w") as f:
         json.dump(sector_metrics, f, indent=2)
 
     # Aggregate cache stats from all agents
@@ -423,10 +426,10 @@ def run_multi_analyst(
         "cache_stats": cache_stats,
     }
 
-    with open(RESULTS_DIR / f"multi_{split_name}_{model_name}_run_info.json", "w") as f:
+    with open(output_dir / f"multi_{split_name}_{model_name}_run_info.json", "w") as f:
         json.dump(run_info, f, indent=2)
 
-    print(f"Multi-analyst results saved to {RESULTS_DIR}/")
+    print(f"Multi-analyst results saved to {output_dir}/")
     if cache_stats.get("total_cost_usd", 0) > 0:
         print(f"  API cost: ${cache_stats['total_cost_usd']:.4f}  "
               f"(est. cache savings: ${cache_stats.get('estimated_savings_usd', 0):.4f})")
@@ -440,6 +443,7 @@ def run_textgrad_multi_analyst(
     model: str = "ollama/glm4:latest",
     random_state: int = 42,
     threshold: float = 0.5,
+    output_dir: Path = RESULTS_DIR,
 ) -> dict:
     """
     TextGrad condition: 4 specialists (in parallel) + TextGrad-optimized synthesizer.
@@ -457,10 +461,10 @@ def run_textgrad_multi_analyst(
     Returns:
         Metrics dictionary
     """
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     model_name = model.replace("/", "_").replace(".", "_")
-    predictions_path = RESULTS_DIR / f"textgrad_{split_name}_{model_name}_predictions.jsonl"
+    predictions_path = output_dir / f"textgrad_{split_name}_{model_name}_predictions.jsonl"
     results = []
     errors = 0
 
@@ -537,11 +541,11 @@ def run_textgrad_multi_analyst(
     metrics = compute_metrics(y_true, y_prob, threshold=threshold)
     print_metrics(metrics, label=f"TextGrad Multi-Analyst — {model}")
 
-    with open(RESULTS_DIR / f"textgrad_{split_name}_{model_name}_metrics.json", "w") as f:
+    with open(output_dir / f"textgrad_{split_name}_{model_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
     sector_metrics = compute_sector_metrics(results, threshold=threshold)
-    with open(RESULTS_DIR / f"textgrad_{split_name}_{model_name}_sector_metrics.json", "w") as f:
+    with open(output_dir / f"textgrad_{split_name}_{model_name}_sector_metrics.json", "w") as f:
         json.dump(sector_metrics, f, indent=2)
 
     cache_stats = market_analyst.llm_client.get_cache_stats()
@@ -559,10 +563,10 @@ def run_textgrad_multi_analyst(
         "cache_stats": cache_stats,
     }
 
-    with open(RESULTS_DIR / f"textgrad_{split_name}_{model_name}_run_info.json", "w") as f:
+    with open(output_dir / f"textgrad_{split_name}_{model_name}_run_info.json", "w") as f:
         json.dump(run_info, f, indent=2)
 
-    print(f"TextGrad results saved to {RESULTS_DIR}/")
+    print(f"TextGrad results saved to {output_dir}/")
     if cache_stats.get("total_cost_usd", 0) > 0:
         print(f"  API cost: ${cache_stats['total_cost_usd']:.4f}  "
               f"(est. cache savings: ${cache_stats.get('estimated_savings_usd', 0):.4f})")
@@ -611,11 +615,18 @@ def main():
         default=42,
         help="Random seed for reproducibility (default: 42)",
     )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=None,
+        help="Directory to write results (default: results/ablation)",
+    )
 
     args = parser.parse_args()
+    output_dir = Path(args.output_dir) if args.output_dir else RESULTS_DIR
 
     # Archive previous results to prevent overwrites
-    archive_old_results(RESULTS_DIR)
+    archive_old_results(output_dir)
 
     # Load splits
     df_train, df_val, df_test = get_splits(random_state=args.seed)
@@ -632,18 +643,18 @@ def main():
 
     # Run appropriate ablation condition
     if args.ablation == "random":
-        metrics = run_random_baseline(df_eval, split_name=args.split, random_state=args.seed, threshold=args.threshold)
+        metrics = run_random_baseline(df_eval, split_name=args.split, random_state=args.seed, threshold=args.threshold, output_dir=output_dir)
     elif args.ablation == "single":
         metrics = run_single_agent(
-            df_eval, split_name=args.split, model=args.model, random_state=args.seed, threshold=args.threshold
+            df_eval, split_name=args.split, model=args.model, random_state=args.seed, threshold=args.threshold, output_dir=output_dir
         )
     elif args.ablation == "multi":
         metrics = run_multi_analyst(
-            df_eval, split_name=args.split, model=args.model, random_state=args.seed, threshold=args.threshold
+            df_eval, split_name=args.split, model=args.model, random_state=args.seed, threshold=args.threshold, output_dir=output_dir
         )
     elif args.ablation == "textgrad":
         metrics = run_textgrad_multi_analyst(
-            df_eval, split_name=args.split, model=args.model, random_state=args.seed, threshold=args.threshold
+            df_eval, split_name=args.split, model=args.model, random_state=args.seed, threshold=args.threshold, output_dir=output_dir
         )
 
     print(f"\n✓ Ablation '{args.ablation}' completed successfully")
