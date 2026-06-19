@@ -2,8 +2,12 @@
 End-to-end pipeline. Runs all four ablation conditions and TextGrad optimization.
 
     python experiments/run_experiments.py
-    python experiments/run_experiments.py --exclude 1 2   # skip steps 1 and 2
-    python experiments/run_experiments.py --exclude 4 5   # skip TextGrad steps
+    python experiments/run_experiments.py --exclude 1 2        # skip steps 1 and 2
+    python experiments/run_experiments.py --exclude 4 5        # skip TextGrad steps
+    python experiments/run_experiments.py --seeds 42 123 456   # run three seeds
+
+Each seed writes to results/seed_<N>/{ablation,textgrad_validation,judge_evaluation}/.
+A single seed (default) writes to the standard results/ directories unchanged.
 
 Edit the RUN CONFIGURATION block below to control sample sizes and training steps.
 For more granular control, call run_ablation.py and run_textgrad.py directly.
@@ -42,8 +46,9 @@ SPLIT  = "val"    # "train" | "val" | "test"
 SAMPLE = 30       # rows per ablation condition (None = full split)
 N_TRAIN = 4       # TextGrad training steps
 N_VAL   = 30      # examples evaluated after each TextGrad step
-JUDGE_MODEL      = "groq/llama-3.3-70b-versatile"
+JUDGE_MODEL      = "ollama/deepseek-r1:14b"
 N_JUDGE_SAMPLE   = 10      # startups to judge across all three conditions
+JUDGE_SLEEP      = 0       # seconds between judge calls (set to 65 for Groq free tier)
 # ──────────────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Run end-to-end experiment pipeline.")
@@ -52,30 +57,59 @@ parser.add_argument(
     help="Step numbers to skip (1-6). E.g. --exclude 1 2",
     default=[],
 )
+parser.add_argument(
+    "--seeds", nargs="+", type=int, metavar="SEED",
+    help="One or more random seeds to run (default: 42). Multiple seeds run sequentially, "
+         "each writing to results/seed_<N>/. E.g. --seeds 42 123 456",
+    default=[42],
+)
 args = parser.parse_args()
 excluded_steps = set(args.exclude)
+seeds = args.seeds
 
 _sample_args = ["--sample", str(SAMPLE)] if SAMPLE is not None else []
 
-STEPS = [
-    (1, "Step 1/6 — Random baseline",       [PY, ABLATION, "--ablation", "random",   "--split", SPLIT] + _sample_args),
-    (2, "Step 2/6 — Single agent",          [PY, ABLATION, "--ablation", "single",   "--split", SPLIT, "--model", MODEL] + _sample_args),
-    (3, "Step 3/6 — Multi-analyst",         [PY, ABLATION, "--ablation", "multi",    "--split", SPLIT, "--model", MODEL] + _sample_args),
-    (4, "Step 4/6 — TextGrad training",     [PY, TEXTGRAD, "--n_train", str(N_TRAIN), "--n_val", str(N_VAL)]),
-    (5, "Step 5/6 — TextGrad evaluation",   [PY, ABLATION, "--ablation", "textgrad", "--split", SPLIT, "--model", MODEL] + _sample_args),
-    (6, "Step 6/6 — Judge evaluation",      [PY, JUDGE, "--n_sample", str(N_JUDGE_SAMPLE), "--judge_model", JUDGE_MODEL]),
-]
+for seed_idx, seed in enumerate(seeds):
+    multi_seed = len(seeds) > 1
+    seed_label = f"Seed {seed_idx + 1}/{len(seeds)} (seed={seed})"
+    if multi_seed:
+        print(f"\n{'#'*60}\n  {seed_label}\n{'#'*60}")
 
-for step_num, label, cmd in STEPS:
-    if step_num in excluded_steps:
-        print(f"\n{'='*60}\n  {label}  [SKIPPED]\n{'='*60}\n")
-        continue
-    print(f"\n{'='*60}\n  {label}\n{'='*60}\n")
-    result = subprocess.run(cmd, cwd=REPO_ROOT)
-    if result.returncode != 0:
-        print(f"\n✗ Failed at: {label}")
-        sync_to_drive(f"{label} (partial — failed)")
-        sys.exit(result.returncode)
-    sync_to_drive(label)
+    # Per-seed output dirs: results/seed_<N>/... when running multiple seeds,
+    # otherwise fall back to the default paths (backward compatible).
+    if multi_seed:
+        ablation_dir  = str(REPO_ROOT / "results" / f"seed_{seed}" / "ablation")
+        textgrad_dir  = str(REPO_ROOT / "results" / f"seed_{seed}" / "textgrad_validation")
+        judge_dir     = str(REPO_ROOT / "results" / f"seed_{seed}" / "judge_evaluation")
+    else:
+        ablation_dir = textgrad_dir = judge_dir = None  # sub-scripts use their own defaults
 
-print("\n✓ All steps complete. Results in results/ablation/, results/textgrad_validation/, and results/judge_evaluation/\n")
+    def _output_args(out_dir):
+        return ["--output_dir", out_dir] if out_dir else []
+
+    STEPS = [
+        (1, "Step 1/6 — Random baseline",     [PY, ABLATION, "--ablation", "random",   "--split", SPLIT, "--seed", str(seed)] + _sample_args + _output_args(ablation_dir)),
+        (2, "Step 2/6 — Single agent",        [PY, ABLATION, "--ablation", "single",   "--split", SPLIT, "--model", MODEL, "--seed", str(seed)] + _sample_args + _output_args(ablation_dir)),
+        (3, "Step 3/6 — Multi-analyst",       [PY, ABLATION, "--ablation", "multi",    "--split", SPLIT, "--model", MODEL, "--seed", str(seed)] + _sample_args + _output_args(ablation_dir)),
+        (4, "Step 4/6 — TextGrad training",   [PY, TEXTGRAD, "--n_train", str(N_TRAIN), "--n_val", str(N_VAL), "--seed", str(seed)] + _output_args(textgrad_dir)),
+        (5, "Step 5/6 — TextGrad evaluation", [PY, ABLATION, "--ablation", "textgrad", "--split", SPLIT, "--model", MODEL, "--seed", str(seed)] + _sample_args + _output_args(ablation_dir)),
+        (6, "Step 6/6 — Judge evaluation",    [PY, JUDGE, "--n_sample", str(N_JUDGE_SAMPLE), "--judge_model", JUDGE_MODEL, "--judge_sleep", str(JUDGE_SLEEP), "--seed", str(seed)] + _output_args(judge_dir)),
+    ]
+
+    for step_num, label, cmd in STEPS:
+        if step_num in excluded_steps:
+            print(f"\n{'='*60}\n  {label}  [SKIPPED]\n{'='*60}\n")
+            continue
+        print(f"\n{'='*60}\n  {label}\n{'='*60}\n")
+        result = subprocess.run(cmd, cwd=REPO_ROOT)
+        if result.returncode != 0:
+            print(f"\n✗ Failed at: {label}" + (f" ({seed_label})" if multi_seed else ""))
+            sync_to_drive(f"{label} (partial — failed)")
+            sys.exit(result.returncode)
+        sync_to_drive(label)
+
+if len(seeds) > 1:
+    seed_dirs = ", ".join(f"results/seed_{s}/" for s in seeds)
+    print(f"\n✓ All steps complete across {len(seeds)} seeds. Results in {seed_dirs}\n")
+else:
+    print("\n✓ All steps complete. Results in results/ablation/, results/textgrad_validation/, and results/judge_evaluation/\n")
