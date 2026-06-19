@@ -37,7 +37,7 @@ from src.utils.data_splits import get_splits
 RESULTS_DIR = REPO_ROOT / "results" / "judge_evaluation"
 ABLATION_DIR = REPO_ROOT / "results" / "ablation"
 
-DEFAULT_JUDGE_MODEL = "groq/llama-3.3-70b-versatile"
+DEFAULT_JUDGE_MODEL = "ollama/deepseek-r1:14b"
 
 # ─── Rubrics ──────────────────────────────────────────────────────────────────
 
@@ -251,9 +251,14 @@ def main():
                         help="Path to textgrad predictions jsonl")
     parser.add_argument("--resume_from", type=str, default=None,
                         help="Path to an existing judge scores JSONL — skip already-evaluated (startup, condition) pairs")
+    parser.add_argument("--judge_sleep", type=float, default=0,
+                        help="Seconds to sleep between judge calls (default: 0). Set to 65 for Groq free tier rate limits.")
+    parser.add_argument("--output_dir", type=str, default=None,
+                        help="Directory to write results (default: results/judge_evaluation)")
     args = parser.parse_args()
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(args.output_dir) if args.output_dir else RESULTS_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # ─── Load resume state ─────────────────────────────────────────────────────
     # Keys are (object_id, condition) OR (name, condition) for recovered records
@@ -328,6 +333,7 @@ def main():
 
     results = list(prior_results)  # seed with any resumed results
     dimensions = DIMENSIONS
+    incremental_path = output_dir / "judge_scores_incremental.jsonl"
 
     for object_id in sample_ids:
         startup_name = preds["single"][object_id].get("name", object_id)
@@ -348,7 +354,8 @@ def main():
 
         for condition in conditions_todo:
             import time
-            time.sleep(65)  # Groq free tier: ~6K TPM; prompts are ~3-5K tokens each
+            if args.judge_sleep > 0:
+                time.sleep(args.judge_sleep)  # e.g. 65s for Groq free tier (~6K TPM)
             pred = preds[condition][object_id]
             analyst_assessments = pred.get("analyst_assessments")
 
@@ -391,15 +398,12 @@ def main():
     import datetime as dt
     timestamp = dt.datetime.now(tz=dt.timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
-    # Write incremental results (also useful if the run is interrupted)
-    incremental_path = RESULTS_DIR / "judge_scores_incremental.jsonl"
-
     if not results:
         print("\n⚠  No results — no common startups were evaluated.")
         return
 
     df_results = pd.DataFrame(results)
-    output_path = RESULTS_DIR / f"judge_scores_{timestamp}.jsonl"
+    output_path = output_dir / f"judge_scores_{timestamp}.jsonl"
     df_results.to_json(output_path, orient="records", lines=True)
     print(f"\nResults saved to: {output_path}")
 
@@ -416,7 +420,7 @@ def main():
     summary = summary.reindex([c for c in order if c in summary.index])
     print(summary.to_string())
 
-    summary_path = RESULTS_DIR / f"judge_summary_{timestamp}.json"
+    summary_path = output_dir / f"judge_summary_{timestamp}.json"
     summary.to_json(summary_path, indent=2)
     print(f"\nSummary saved to: {summary_path}")
 
