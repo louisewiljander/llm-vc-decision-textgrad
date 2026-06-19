@@ -43,9 +43,9 @@ SPLIT  = "val"    # "train" | "val" | "test"
 SAMPLE = 30       # rows per ablation condition (None = full split)
 N_TRAIN = 4       # TextGrad training steps
 N_VAL   = 30      # examples evaluated after each TextGrad step
-JUDGE_MODEL      = "ollama/deepseek-r1:32b"
+JUDGE_MODEL      = "groq/llama-3.3-70b-versatile"
 N_JUDGE_SAMPLE   = 10      # startups to judge across all three conditions
-JUDGE_SLEEP      = 0       # seconds between judge calls (set to 65 for Groq free tier)
+JUDGE_SLEEP      = 65      # seconds between judge calls (Groq free tier: ~6K TPM)
 # ──────────────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Run end-to-end experiment pipeline.")

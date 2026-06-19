@@ -37,7 +37,7 @@ from src.utils.data_splits import get_splits
 RESULTS_DIR = REPO_ROOT / "results" / "judge_evaluation"
 ABLATION_DIR = REPO_ROOT / "results" / "ablation"
 
-DEFAULT_JUDGE_MODEL = "ollama/deepseek-r1:32b"
+DEFAULT_JUDGE_MODEL = "groq/llama-3.3-70b-versatile"
 
 # ─── Rubrics ──────────────────────────────────────────────────────────────────
 
