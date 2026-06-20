@@ -60,9 +60,9 @@ def sync_to_drive(step_label: str) -> None:
 # ── RUN CONFIGURATION ─────────────────────────────────────────────────────────
 MODEL  = "ollama/glm4:latest"
 SPLIT  = "val"    # "train" | "val" | "test"
-SAMPLE = 30       # rows per ablation condition (None = full split)
-N_TRAIN = 4       # TextGrad training steps
-N_VAL   = 30      # examples evaluated after each TextGrad step
+SAMPLE = 100       # rows per ablation condition (None = full split)
+N_TRAIN = 3       # TextGrad training steps
+N_VAL   = 100      # examples evaluated after each TextGrad step
 JUDGE_MODEL      = "groq/llama-3.3-70b-versatile"
 N_JUDGE_SAMPLE   = 10      # startups to judge across all three conditions
 JUDGE_SLEEP      = 65      # seconds between judge calls (Groq free tier: ~6K TPM)
