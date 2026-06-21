@@ -13,6 +13,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.utils.data_splits import get_splits
+from src.utils.archive import make_run_dir
 PY = sys.executable
 ABLATION = str(REPO_ROOT / "experiments" / "run_ablation.py")
 TEXTGRAD = str(REPO_ROOT / "experiments" / "run_textgrad.py")
@@ -86,6 +88,8 @@ seeds = args.seeds
 
 _sample_args = ["--sample", str(SAMPLE)] if SAMPLE is not None else []
 
+RUN_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
 for seed_idx, seed in enumerate(seeds):
     multi_seed = len(seeds) > 1
     seed_label = f"Seed {seed_idx + 1}/{len(seeds)} (seed={seed})"
@@ -98,25 +102,20 @@ for seed_idx, seed in enumerate(seeds):
     print_split_verification(seed)
     print(f"{'─'*60}\n")
 
-    # Per-seed output dirs: results/seed_<N>/... when running multiple seeds,
-    # otherwise fall back to the default paths (backward compatible).
-    if multi_seed:
-        ablation_dir  = str(REPO_ROOT / "results" / f"seed_{seed}" / "ablation")
-        textgrad_dir  = str(REPO_ROOT / "results" / f"seed_{seed}" / "textgrad_validation")
-        judge_dir     = str(REPO_ROOT / "results" / f"seed_{seed}" / "judge_evaluation")
-    else:
-        ablation_dir = textgrad_dir = judge_dir = None  # sub-scripts use their own defaults
-
-    def _output_args(out_dir):
-        return ["--output_dir", out_dir] if out_dir else []
+    # Create run directories upfront so all sub-scripts share the same timestamp.
+    # For multiple seeds, results go under results/seed_<N>/; otherwise top-level.
+    results_base = REPO_ROOT / "results" / f"seed_{seed}" if multi_seed else REPO_ROOT / "results"
+    abl_run_dir = make_run_dir(results_base / "ablation",             timestamp=RUN_TIMESTAMP)
+    tg_run_dir  = make_run_dir(results_base / "textgrad_validation",  timestamp=RUN_TIMESTAMP)
+    jdg_run_dir = make_run_dir(results_base / "judge_evaluation",     timestamp=RUN_TIMESTAMP)
 
     STEPS = [
-        (1, "Step 1/6 — Random baseline",     [PY, ABLATION, "--ablation", "random",   "--split", SPLIT, "--seed", str(seed)] + _sample_args + _output_args(ablation_dir)),
-        (2, "Step 2/6 — Single agent",        [PY, ABLATION, "--ablation", "single",   "--split", SPLIT, "--model", MODEL, "--seed", str(seed)] + _sample_args + _output_args(ablation_dir)),
-        (3, "Step 3/6 — Multi-analyst",       [PY, ABLATION, "--ablation", "multi",    "--split", SPLIT, "--model", MODEL, "--seed", str(seed)] + _sample_args + _output_args(ablation_dir)),
-        (4, "Step 4/6 — TextGrad training",   [PY, TEXTGRAD, "--n_train", str(N_TRAIN), "--n_val", str(N_VAL), "--seed", str(seed)] + _output_args(textgrad_dir)),
-        (5, "Step 5/6 — TextGrad evaluation", [PY, ABLATION, "--ablation", "textgrad", "--split", SPLIT, "--model", MODEL, "--seed", str(seed)] + _sample_args + _output_args(ablation_dir)),
-        (6, "Step 6/6 — Judge evaluation",    [PY, JUDGE, "--n_sample", str(N_JUDGE_SAMPLE), "--judge_model", JUDGE_MODEL, "--judge_sleep", str(JUDGE_SLEEP), "--seed", str(seed)] + _output_args(judge_dir)),
+        (1, "Step 1/6 — Random baseline",     [PY, ABLATION, "--ablation", "random",   "--split", SPLIT, "--seed", str(seed), "--output_dir", str(abl_run_dir)] + _sample_args),
+        (2, "Step 2/6 — Single agent",        [PY, ABLATION, "--ablation", "single",   "--split", SPLIT, "--model", MODEL, "--seed", str(seed), "--output_dir", str(abl_run_dir)] + _sample_args),
+        (3, "Step 3/6 — Multi-analyst",       [PY, ABLATION, "--ablation", "multi",    "--split", SPLIT, "--model", MODEL, "--seed", str(seed), "--output_dir", str(abl_run_dir)] + _sample_args),
+        (4, "Step 4/6 — TextGrad training",   [PY, TEXTGRAD, "--n_train", str(N_TRAIN), "--n_val", str(N_VAL), "--seed", str(seed), "--output_dir", str(tg_run_dir)]),
+        (5, "Step 5/6 — TextGrad evaluation", [PY, ABLATION, "--ablation", "textgrad", "--split", SPLIT, "--model", MODEL, "--seed", str(seed), "--output_dir", str(abl_run_dir)] + _sample_args),
+        (6, "Step 6/6 — Judge evaluation",    [PY, JUDGE, "--n_sample", str(N_JUDGE_SAMPLE), "--judge_model", JUDGE_MODEL, "--judge_sleep", str(JUDGE_SLEEP), "--seed", str(seed), "--output_dir", str(jdg_run_dir), "--ablation_dir", str(abl_run_dir)]),
     ]
 
     for step_num, label, cmd in STEPS:
@@ -132,7 +131,10 @@ for seed_idx, seed in enumerate(seeds):
         sync_to_drive(label)
 
 if len(seeds) > 1:
-    seed_dirs = ", ".join(f"results/seed_{s}/" for s in seeds)
-    print(f"\n✓ All steps complete across {len(seeds)} seeds. Results in {seed_dirs}\n")
+    seed_dirs = ", ".join(f"results/seed_{s}/*/runs/{RUN_TIMESTAMP}/" for s in seeds)
+    print(f"\n✓ All steps complete across {len(seeds)} seeds.\n  Results in {seed_dirs}\n")
 else:
-    print("\n✓ All steps complete. Results in results/ablation/, results/textgrad_validation/, and results/judge_evaluation/\n")
+    print(f"\n✓ All steps complete. Run timestamp: {RUN_TIMESTAMP}")
+    print(f"  results/ablation/runs/{RUN_TIMESTAMP}/")
+    print(f"  results/textgrad_validation/runs/{RUN_TIMESTAMP}/")
+    print(f"  results/judge_evaluation/runs/{RUN_TIMESTAMP}/\n")

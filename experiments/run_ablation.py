@@ -41,7 +41,7 @@ from src.agents.textgrad_synthesizer import TextGradSynthesizer
 from src.evaluation.metrics import compute_metrics, print_metrics
 from src.prompts.templates import format_startup_profile
 from src.utils.data_splits import get_splits
-from src.utils.archive import archive_old_results
+from src.utils.archive import make_run_dir
 
 RESULTS_DIR = Path("results/ablation")
 
@@ -623,10 +623,11 @@ def main():
     )
 
     args = parser.parse_args()
-    output_dir = Path(args.output_dir) if args.output_dir else RESULTS_DIR
-
-    # Archive previous results to prevent overwrites
-    archive_old_results(output_dir)
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        output_dir = make_run_dir(RESULTS_DIR.resolve())
 
     # Load splits
     df_train, df_val, df_test = get_splits(random_state=args.seed)

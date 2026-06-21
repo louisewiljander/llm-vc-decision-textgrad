@@ -33,8 +33,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.prompts.templates import format_startup_profile
 from src.utils.data_splits import get_splits
+from src.utils.archive import make_run_dir
 
-RESULTS_DIR = REPO_ROOT / "results" / "judge_evaluation"
+RESULTS_DIR  = REPO_ROOT / "results" / "judge_evaluation"
 ABLATION_DIR = REPO_ROOT / "results" / "ablation"
 
 DEFAULT_JUDGE_MODEL = "groq/llama-3.3-70b-versatile"
@@ -214,22 +215,27 @@ def load_predictions(path: Path) -> dict:
 
 def find_prediction_file(condition: str, ablation_dir: Path) -> Path | None:
     """Auto-discover the most recent predictions file for a condition."""
-    # Check current dir first
-    # Sort by modification time (most recent last) to avoid picking stale files
+    # Check the given dir directly (works for both explicit run dirs and latest/)
     matches = sorted(
         ablation_dir.glob(f"{condition}_val_*_predictions.jsonl"),
         key=lambda p: p.stat().st_mtime,
     )
     if matches:
         return matches[-1]
-    # Check archives (most recent archive first)
-    for archive in sorted((ablation_dir / "archive").iterdir(), reverse=True):
-        matches = sorted(
-            archive.glob(f"{condition}_val_*_predictions.jsonl"),
-            key=lambda p: p.stat().st_mtime,
-        )
-        if matches:
-            return matches[-1]
+    # New structure: search runs/ subdirs newest-first
+    runs_dir = ablation_dir / "runs"
+    if runs_dir.exists():
+        for run_subdir in sorted(runs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            matches = sorted(run_subdir.glob(f"{condition}_val_*_predictions.jsonl"))
+            if matches:
+                return matches[-1]
+    # Legacy fallback: old archive/ subdirs
+    archive_dir = ablation_dir / "archive"
+    if archive_dir.exists():
+        for archive in sorted(archive_dir.iterdir(), reverse=True):
+            matches = sorted(archive.glob(f"{condition}_val_*_predictions.jsonl"))
+            if matches:
+                return matches[-1]
     return None
 
 
@@ -254,11 +260,22 @@ def main():
     parser.add_argument("--judge_sleep", type=float, default=0,
                         help="Seconds to sleep between judge calls (default: 0). Set to 65 for Groq free tier rate limits.")
     parser.add_argument("--output_dir", type=str, default=None,
-                        help="Directory to write results (default: results/judge_evaluation)")
+                        help="Directory to write results (default: new timestamped run under results/judge_evaluation/runs/)")
+    parser.add_argument("--ablation_dir", type=str, default=None,
+                        help="Directory containing ablation prediction files (default: results/ablation/latest)")
     args = parser.parse_args()
 
-    output_dir = Path(args.output_dir) if args.output_dir else RESULTS_DIR
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        output_dir = make_run_dir(RESULTS_DIR)
+
+    if args.ablation_dir:
+        ablation_dir = Path(args.ablation_dir)
+    else:
+        latest = ABLATION_DIR / "latest"
+        ablation_dir = latest.resolve() if latest.exists() else ABLATION_DIR
 
     # ─── Load resume state ─────────────────────────────────────────────────────
     # Keys are (object_id, condition) OR (name, condition) for recovered records
@@ -288,9 +305,9 @@ def main():
     print("Locating prediction files...\n")
 
     paths = {
-        "single":   Path(args.single) if args.single else find_prediction_file("single", ABLATION_DIR),
-        "multi":    Path(args.multi) if args.multi else find_prediction_file("multi", ABLATION_DIR),
-        "textgrad": Path(args.textgrad) if args.textgrad else find_prediction_file("textgrad", ABLATION_DIR),
+        "single":   Path(args.single) if args.single else find_prediction_file("single", ablation_dir),
+        "multi":    Path(args.multi) if args.multi else find_prediction_file("multi", ablation_dir),
+        "textgrad": Path(args.textgrad) if args.textgrad else find_prediction_file("textgrad", ablation_dir),
     }
 
     for name, path in paths.items():
@@ -395,15 +412,12 @@ def main():
     # ─── Save & summarise ──────────────────────────────────────────────────────
     print("\n" + "=" * 70)
 
-    import datetime as dt
-    timestamp = dt.datetime.now(tz=dt.timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-
     if not results:
         print("\n⚠  No results — no common startups were evaluated.")
         return
 
     df_results = pd.DataFrame(results)
-    output_path = output_dir / f"judge_scores_{timestamp}.jsonl"
+    output_path = output_dir / "judge_scores.jsonl"
     df_results.to_json(output_path, orient="records", lines=True)
     print(f"\nResults saved to: {output_path}")
 
@@ -420,7 +434,7 @@ def main():
     summary = summary.reindex([c for c in order if c in summary.index])
     print(summary.to_string())
 
-    summary_path = output_dir / f"judge_summary_{timestamp}.json"
+    summary_path = output_dir / "judge_summary.json"
     summary.to_json(summary_path, indent=2)
     print(f"\nSummary saved to: {summary_path}")
 

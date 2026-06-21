@@ -64,7 +64,7 @@ from src.agents.synthesizer import SynthesizerAgent, SYNTHESIZER_SYSTEM_PROMPT
 from src.evaluation.metrics import compute_metrics, print_metrics
 from src.prompts.templates import format_startup_profile
 from src.utils.data_splits import get_splits
-from src.utils.archive import archive_old_results
+from src.utils.archive import make_run_dir
 
 RESULTS_DIR = Path("results/textgrad_validation")
 EXPERIMENTS_LOG_DIR = Path(__file__).resolve().parent / "logs"
@@ -758,11 +758,16 @@ def main():
     )
 
     args = parser.parse_args()
-    output_dir = Path(args.output_dir) if args.output_dir else RESULTS_DIR
-
-    # Only archive previous results on a fresh run, not on resume
-    if args.resume_from_step is None:
-        archive_old_results(output_dir)
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    elif args.resume_from_step is not None:
+        latest = RESULTS_DIR.resolve() / "latest"
+        if not latest.exists():
+            raise FileNotFoundError("No previous run to resume from — run without --resume_from_step first.")
+        output_dir = latest.resolve()
+    else:
+        output_dir = make_run_dir(RESULTS_DIR.resolve())
 
     run_textgrad_optimization(
         n_train=args.n_train,

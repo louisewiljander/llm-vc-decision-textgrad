@@ -46,7 +46,10 @@ class TextGradSynthesizer(SynthesizerAgent):
         """
         from src.agents.synthesizer import SYNTHESIZER_SYSTEM_PROMPT
         
-        prompt_file = Path(__file__).resolve().parents[2] / "results" / "textgrad_validation" / "final_synthesizer_prompt.txt"
+        tg_base = Path(__file__).resolve().parents[2] / "results" / "textgrad_validation"
+        latest  = tg_base / "latest"
+        tg_dir  = latest.resolve() if latest.exists() else tg_base
+        prompt_file = tg_dir / "final_synthesizer_prompt.txt"
         
         if prompt_file.exists():
             with open(prompt_file, 'r') as f:
