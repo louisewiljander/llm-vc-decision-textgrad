@@ -88,9 +88,8 @@ seeds = args.seeds
 
 _sample_args = ["--sample", str(SAMPLE)] if SAMPLE is not None else []
 
-RUN_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
 for seed_idx, seed in enumerate(seeds):
+    RUN_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + f"_s{seed}"
     multi_seed = len(seeds) > 1
     seed_label = f"Seed {seed_idx + 1}/{len(seeds)} (seed={seed})"
     if multi_seed:
