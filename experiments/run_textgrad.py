@@ -568,9 +568,32 @@ def run_textgrad_optimization(
             pred_prob = 50
             pred_correct = False
 
-        # ── Backward pass ─────────────────────────────────────────────────────
-        print("  [Backward pass...]")
-        loss.backward()
+        # ── Backward pass + optimizer step (with rate-limit retry) ───────────
+        # Groq TPD cap (100K tokens/day) can hit mid-backward-pass. If it does,
+        # sleep until the limit resets and retry the whole backward+step pair.
+        _MAX_RL_RETRIES = 5
+        _RL_SLEEP_S     = 90   # seconds to wait on 429 before retrying
+        for _rl_attempt in range(_MAX_RL_RETRIES):
+            try:
+                print("  [Backward pass...]")
+                loss.backward()
+                break   # success — exit retry loop
+            except Exception as _e:
+                _msg = str(_e)
+                if "rate_limit" in _msg.lower() or "429" in _msg or "RateLimitError" in type(_e).__name__:
+                    if _rl_attempt < _MAX_RL_RETRIES - 1:
+                        import time as _time
+                        print(f"\n  ⚠ Groq rate limit hit during backward pass "
+                              f"(attempt {_rl_attempt + 1}/{_MAX_RL_RETRIES}). "
+                              f"Sleeping {_RL_SLEEP_S}s before retry...")
+                        _time.sleep(_RL_SLEEP_S)
+                        # Reset gradients so we can redo the backward cleanly
+                        optimizer.zero_grad()
+                    else:
+                        print(f"\n  ✗ Rate limit still active after {_MAX_RL_RETRIES} retries. Aborting.")
+                        raise
+                else:
+                    raise   # non-rate-limit error — propagate immediately
 
         # Capture prompt-level gradient before zero_grad clears it
         prompt_gradient_text = None
