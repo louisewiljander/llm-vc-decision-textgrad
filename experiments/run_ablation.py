@@ -46,25 +46,6 @@ from src.utils.archive import make_run_dir
 RESULTS_DIR = Path("results/ablation")
 
 
-def compute_sector_metrics(results: list, threshold: float = 0.5) -> dict:
-    """Compute per-sector metrics from a predictions list. Skips sectors with fewer than 3 examples."""
-    from collections import defaultdict
-    by_sector = defaultdict(lambda: {"y_true": [], "y_prob": []})
-    for r in results:
-        cat = r.get("category_code") or "unknown"
-        by_sector[cat]["y_true"].append(r["target"])
-        by_sector[cat]["y_prob"].append(r["probability_float"])
-    out = {}
-    for sector, data in by_sector.items():
-        if len(data["y_true"]) < 3:
-            continue
-        try:
-            m = compute_metrics(data["y_true"], data["y_prob"], threshold=threshold)
-            out[sector] = {k: m[k] for k in ["n", "auroc", "balanced_accuracy", "f1", "ap_10", "ap_20", "ap_30"]}
-        except Exception:
-            pass
-    return out
-
 
 def run_random_baseline(
     df_eval,
@@ -136,10 +117,6 @@ def run_random_baseline(
     # Save outputs
     with open(output_dir / f"random_{split_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
-
-    sector_metrics = compute_sector_metrics(results, threshold=threshold)
-    with open(output_dir / f"random_{split_name}_sector_metrics.json", "w") as f:
-        json.dump(sector_metrics, f, indent=2)
 
     run_info = {
         "timestamp": datetime.utcnow().isoformat(),
@@ -238,10 +215,6 @@ def run_single_agent(
     # Save outputs
     with open(output_dir / f"single_{split_name}_{model_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
-
-    sector_metrics = compute_sector_metrics(results, threshold=threshold)
-    with open(output_dir / f"single_{split_name}_{model_name}_sector_metrics.json", "w") as f:
-        json.dump(sector_metrics, f, indent=2)
 
     cache_stats = agent.llm_client.get_cache_stats()
     run_info = {
@@ -406,10 +379,6 @@ def run_multi_analyst(
     with open(output_dir / f"multi_{split_name}_{model_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
-    sector_metrics = compute_sector_metrics(results, threshold=threshold)
-    with open(output_dir / f"multi_{split_name}_{model_name}_sector_metrics.json", "w") as f:
-        json.dump(sector_metrics, f, indent=2)
-
     # Aggregate cache stats from all agents
     cache_stats = market_analyst.llm_client.get_cache_stats()
     run_info = {
@@ -543,10 +512,6 @@ def run_textgrad_multi_analyst(
 
     with open(output_dir / f"textgrad_{split_name}_{model_name}_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
-
-    sector_metrics = compute_sector_metrics(results, threshold=threshold)
-    with open(output_dir / f"textgrad_{split_name}_{model_name}_sector_metrics.json", "w") as f:
-        json.dump(sector_metrics, f, indent=2)
 
     cache_stats = market_analyst.llm_client.get_cache_stats()
     run_info = {
