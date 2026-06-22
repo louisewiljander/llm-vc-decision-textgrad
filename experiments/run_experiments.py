@@ -102,11 +102,11 @@ for seed_idx, seed in enumerate(seeds):
     print(f"{'─'*60}\n")
 
     # Create run directories upfront so all sub-scripts share the same timestamp.
-    # For multiple seeds, results go under results/seed_<N>/; otherwise top-level.
-    results_base = REPO_ROOT / "results" / f"seed_{seed}" if multi_seed else REPO_ROOT / "results"
-    abl_run_dir = make_run_dir(results_base / "ablation",             timestamp=RUN_TIMESTAMP)
-    tg_run_dir  = make_run_dir(results_base / "textgrad_validation",  timestamp=RUN_TIMESTAMP)
-    jdg_run_dir = make_run_dir(results_base / "judge_evaluation",     timestamp=RUN_TIMESTAMP)
+    # Seed is embedded in RUN_TIMESTAMP (_s{seed}), so runs from different seeds
+    # never collide even when writing to the same top-level results/ dirs.
+    abl_run_dir = make_run_dir(REPO_ROOT / "results" / "ablation",            timestamp=RUN_TIMESTAMP)
+    tg_run_dir  = make_run_dir(REPO_ROOT / "results" / "textgrad_validation", timestamp=RUN_TIMESTAMP)
+    jdg_run_dir = make_run_dir(REPO_ROOT / "results" / "judge_evaluation",    timestamp=RUN_TIMESTAMP)
 
     STEPS = [
         (1, "Step 1/6 — Random baseline",     [PY, ABLATION, "--ablation", "random",   "--split", SPLIT, "--seed", str(seed), "--output_dir", str(abl_run_dir)] + _sample_args),
@@ -129,11 +129,10 @@ for seed_idx, seed in enumerate(seeds):
             sys.exit(result.returncode)
         sync_to_drive(label)
 
-if len(seeds) > 1:
-    seed_dirs = ", ".join(f"results/seed_{s}/*/runs/{RUN_TIMESTAMP}/" for s in seeds)
-    print(f"\n✓ All steps complete across {len(seeds)} seeds.\n  Results in {seed_dirs}\n")
-else:
-    print(f"\n✓ All steps complete. Run timestamp: {RUN_TIMESTAMP}")
-    print(f"  results/ablation/runs/{RUN_TIMESTAMP}/")
+seeds_str = ", ".join(f"s{s}" for s in seeds)
+print(f"\n✓ All steps complete. Run timestamp: {RUN_TIMESTAMP}")
+print(f"  results/ablation/runs/{RUN_TIMESTAMP}/")
+print(f"  results/textgrad_validation/runs/{RUN_TIMESTAMP}/")
+print(f"  results/judge_evaluation/runs/{RUN_TIMESTAMP}/\n")
     print(f"  results/textgrad_validation/runs/{RUN_TIMESTAMP}/")
     print(f"  results/judge_evaluation/runs/{RUN_TIMESTAMP}/\n")
