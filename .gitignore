@@ -27,7 +27,7 @@ Thumbs.db
 
 # Outputs
 results/
-experiments/logs
+experiments/textgrad logs
 notebooks/logs
 /logs
 
