@@ -24,7 +24,7 @@ Per training step:
   2. Forward pass: synthesizer(assessments) → decision + probability
   3. Compute loss: LLM judge vs ground truth
   4. Backward: loss.backward() → textual gradient
-  5. Optimizer step: optimizer.step() → rewrite prompt (with fallback to manual guidance)
+  5. Optimizer step: optimizer.step() → rewrite prompt
   6. Validate: eval on val set → log AP@10, AP@20, AP@30, balanced_accuracy, weighted_f1, auroc
 
 Run with:
@@ -572,6 +572,11 @@ def run_textgrad_optimization(
         print("  [Backward pass...]")
         loss.backward()
 
+        # Capture prompt-level gradient before zero_grad clears it
+        prompt_gradient_text = None
+        if synthesizer_prompt.gradients:
+            prompt_gradient_text = next(iter(synthesizer_prompt.gradients)).value
+
         # Store prompt before update
         prompt_before_len = len(synthesizer_prompt.value)
 
@@ -608,12 +613,16 @@ def run_textgrad_optimization(
             "prediction_correct": pred_correct,
             "judge_feedback_excerpt": loss.value[:100],
             "judge_feedback_full": loss.value,
+            "prompt_gradient": prompt_gradient_text,
             "prompt_length_before": prompt_before_len,
             "prompt_length_after": prompt_after_len,
             "prompt_length_change": prompt_after_len - prompt_before_len,
             "timestamp": datetime.utcnow().isoformat(),
         }
         metrics_log.append(step_metrics)
+        # Flush immediately so a crash mid-run doesn't lose completed steps
+        with open(output_dir / "metrics_per_step.jsonl", "a") as f:
+            f.write(json.dumps(step_metrics) + "\n")
 
         print(f"\n  [Step {step + 1} Metrics]")
         print(f"    Prediction: {pred_decision} (prob: {pred_prob}%) {'✓' if pred_correct else '✗'}")
@@ -646,6 +655,8 @@ def run_textgrad_optimization(
                 "val_metrics": val_metrics,
             }
             metrics_log.append(metrics_record)
+            with open(output_dir / "metrics_per_step.jsonl", "a") as f:
+                f.write(json.dumps(metrics_record) + "\n")
             validation_steps.add(step)
         else:
             print(f"\n  [Skipping validation (validating every {validate_every} steps)]")
@@ -666,7 +677,7 @@ def run_textgrad_optimization(
     print("TEXTGRAD OPTIMIZATION COMPLETE")
     print("=" * 70)
 
-    # Save metrics log
+    # Rewrite metrics log cleanly at end of successful run (deduplicates any incremental writes)
     with open(output_dir / "metrics_per_step.jsonl", "w") as f:
         for record in metrics_log:
             f.write(json.dumps(record) + "\n")
