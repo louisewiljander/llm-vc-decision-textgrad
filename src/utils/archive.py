@@ -1,6 +1,7 @@
 """
 Utility functions for managing experimental results.
 """
+import shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -25,7 +26,11 @@ def make_run_dir(base_dir: Path, timestamp: str | None = None) -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     latest = base_dir / "latest"
-    if latest.is_symlink() or latest.exists():
+    if latest.is_symlink():
+        latest.unlink()
+    elif latest.is_dir():
+        shutil.rmtree(latest)
+    elif latest.exists():
         latest.unlink()
     latest.symlink_to(Path("runs") / ts)  # relative symlink
 
