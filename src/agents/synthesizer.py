@@ -41,10 +41,14 @@ Respond with valid JSON only — no markdown, no preamble:
 class SynthesizerAgent(BaseAgent):
     """Synthesizer agent for aggregating four analyst assessments."""
 
-    def __init__(self, model: str = "claude-haiku-4-5-20251001"):
+    def __init__(
+        self,
+        model: str = "claude-haiku-4-5-20251001",
+        system_prompt: str = SYNTHESIZER_SYSTEM_PROMPT,
+    ):
         """Initialize synthesizer agent."""
         super().__init__(
-            system_prompt=SYNTHESIZER_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             agent_name="synthesizer",
             use_cache=True,
             model=model,

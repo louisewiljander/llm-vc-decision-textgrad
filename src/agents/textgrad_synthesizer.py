@@ -16,25 +16,16 @@ class TextGradSynthesizer(SynthesizerAgent):
     def __init__(self, model: str = "claude-haiku-4-5-20251001"):
         """
         Initialize TextGrad synthesizer agent.
-        
+
         Loads the optimized prompt from results/textgrad_validation/final_synthesizer_prompt.txt
         If the file doesn't exist, falls back to default SynthesizerAgent prompt.
-        
+
         Args:
             model: LLM model to use
         """
-        # Try to load optimized prompt
         optimized_prompt = self._load_optimized_prompt()
-        
-        # Initialize parent with optimized prompt (or default if not found)
-        BaseAgent = SynthesizerAgent.__bases__[0]  # Get BaseAgent
-        BaseAgent.__init__(
-            self,
-            system_prompt=optimized_prompt,
-            agent_name="textgrad_synthesizer",
-            use_cache=True,
-            model=model,
-        )
+        super().__init__(model=model, system_prompt=optimized_prompt)
+        self.agent_name = "textgrad_synthesizer"
     
     @staticmethod
     def _load_optimized_prompt() -> str:
