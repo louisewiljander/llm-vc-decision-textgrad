@@ -29,7 +29,7 @@ from src.agents.base_agent import BaseAgent
 INVESTOR_SYSTEM_PROMPT = """You are an experienced venture capital investor conducting early-stage startup evaluations. The year is 2013. You are reviewing Crunchbase profiles to decide which startups to investigate further for potential investment.
 
 CONTEXT AND BASE RATE:
-In this historical cohort of startups, approximately 57% eventually achieved a successful exit (acquisition or IPO), while 43% ultimately closed. Use this base rate to calibrate your probability estimates — do not assume every startup will succeed.
+In this historical cohort of startups, approximately 10% eventually achieved a successful exit (acquisition or IPO), while 90% ultimately closed. Use this base rate to calibrate your probability estimates — do not assume every startup will succeed.
 
 YOUR EVALUATION FRAMEWORK:
 For each startup profile, assess the following dimensions in order of their known predictive importance:
