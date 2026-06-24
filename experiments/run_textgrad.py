@@ -603,26 +603,54 @@ def run_textgrad_optimization(
         # Store prompt before update
         prompt_before_len = len(synthesizer_prompt.value)
 
-        # ── Optimizer step ────────────────────────────────────────────────────
+        # ── Optimizer step (with rate-limit retry for Groq TPD resets) ─────────
+        # optimizer.step() calls the backward engine one more time to rewrite the
+        # prompt. If Groq TPD is exhausted it raises 429; we parse the wait time
+        # from the error message and sleep until the rolling window clears, then
+        # retry. IndexError (TextGrad formatting bug) is handled as before.
         print("  [Optimizer step...]")
-        try:
-            optimizer.step()
-            # Ensure output format is preserved (TextGrad sometimes removes it)
-            synthesizer_prompt.value = ensure_output_format_preserved(synthesizer_prompt.value)
-            print(f"\n  [Updated prompt]:\n  '{synthesizer_prompt.value[:150]}...'")
-        except IndexError as e:
-            # TextGrad optimizer formatting failed - use manual refinement instead
-            print(f"\n  ⚠ TextGrad optimizer failed: {str(e)[:100]}...")
-            print("  Using manual prompt refinement as fallback.\n")
-            
-            # Manually refine the prompt by appending guidance
-            if "INVEST" in correct_label:
-                guidance = "\n\nWhen analysts agree on PROMISING signals across market, business model, feasibility, and team, lean toward INVEST."
-            else:
-                guidance = "\n\nWhen any analyst raises red flags or confidence is low, lean toward PASS."
-            
-            synthesizer_prompt.value += guidance
-            print(f"  [Manual guidance added to prompt]")
+        _MAX_OPT_RETRIES = 3
+        for _opt_attempt in range(_MAX_OPT_RETRIES):
+            try:
+                optimizer.step()
+                # Ensure output format is preserved (TextGrad sometimes removes it)
+                synthesizer_prompt.value = ensure_output_format_preserved(synthesizer_prompt.value)
+                print(f"\n  [Updated prompt]:\n  '{synthesizer_prompt.value[:150]}...'")
+                break  # success
+            except IndexError as _ie:
+                # TextGrad optimizer formatting failed - use manual refinement instead
+                print(f"\n  ⚠ TextGrad optimizer failed: {str(_ie)[:100]}...")
+                print("  Using manual prompt refinement as fallback.\n")
+                if "INVEST" in correct_label:
+                    guidance = "\n\nWhen analysts agree on PROMISING signals across market, business model, feasibility, and team, lean toward INVEST."
+                else:
+                    guidance = "\n\nWhen any analyst raises red flags or confidence is low, lean toward PASS."
+                synthesizer_prompt.value += guidance
+                print("  [Manual guidance added to prompt]")
+                break  # IndexError is not retryable
+            except Exception as _oe:
+                _msg = str(_oe)
+                if ("rate_limit" in _msg.lower() or "429" in _msg or
+                        "RateLimitError" in type(_oe).__name__):
+                    if _opt_attempt < _MAX_OPT_RETRIES - 1:
+                        import re as _re_opt
+                        import time as _time_opt
+                        # Parse "Please try again in Xm Ys" from the Groq error body
+                        _match = _re_opt.search(r'try again in (\d+)m(\d+(?:\.\d+)?)', _msg)
+                        if _match:
+                            _wait_s = int(_match.group(1)) * 60 + int(float(_match.group(2))) + 120
+                        else:
+                            _wait_s = 2400  # 40-min fallback
+                        print(f"\n  ⚠ Groq TPD limit hit during optimizer.step() "
+                              f"(attempt {_opt_attempt + 1}/{_MAX_OPT_RETRIES}). "
+                              f"Sleeping {_wait_s}s (~{_wait_s // 60} min) before retry...")
+                        _time_opt.sleep(_wait_s)
+                    else:
+                        print(f"\n  ✗ Rate limit still active after {_MAX_OPT_RETRIES} retries. "
+                              f"Resume with --resume_from_step {step}.")
+                        raise
+                else:
+                    raise  # non-rate-limit, non-IndexError: propagate immediately
 
         # Log per-step metrics
         prompt_after_len = len(synthesizer_prompt.value)
