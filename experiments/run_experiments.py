@@ -78,13 +78,19 @@ parser.add_argument(
 )
 parser.add_argument(
     "--seeds", nargs="+", type=int, metavar="SEED",
-    help="One or more random seeds to run (default: 42). Multiple seeds run sequentially, "
-         "each writing to results/seed_<N>/. E.g. --seeds 42 123 456",
+    help="One or more random seeds to run (default: 42). Multiple seeds run sequentially. "
+         "E.g. --seeds 42 123 456",
     default=[42],
+)
+parser.add_argument(
+    "--split", choices=["val", "test"], default=None,
+    help="Override the SPLIT variable (val or test). Defaults to the value in RUN CONFIGURATION.",
 )
 args = parser.parse_args()
 excluded_steps = set(args.exclude)
 seeds = args.seeds
+if args.split:
+    SPLIT = args.split
 
 _sample_args = ["--sample", str(SAMPLE)] if SAMPLE is not None else []
 
@@ -122,7 +128,33 @@ for seed_idx, seed in enumerate(seeds):
             print(f"\n{'='*60}\n  {label}  [SKIPPED]\n{'='*60}\n")
             continue
         print(f"\n{'='*60}\n  {label}\n{'='*60}\n")
+
+        # Before TextGrad eval (step 5), restore the seed's trained prompt if a
+        # backup exists. This ensures the correct prompt is loaded when running
+        # test-set evaluation after training has already completed on a prior run.
+        if step_num == 5:
+            backup = REPO_ROOT / "results" / "textgrad_validation" / f"prompt_seed_{seed}.txt"
+            if backup.exists():
+                flat = REPO_ROOT / "results" / "textgrad_validation" / "final_synthesizer_prompt.txt"
+                shutil.copy(backup, flat)
+                latest = REPO_ROOT / "results" / "textgrad_validation" / "latest"
+                if latest.exists():
+                    shutil.copy(backup, latest.resolve() / "final_synthesizer_prompt.txt")
+                print(f"  ✓ Restored prompt for seed {seed} from {backup.name}")
+
         result = subprocess.run(cmd, cwd=REPO_ROOT)
+
+        # After TextGrad training (step 4), back up the trained prompt so it
+        # isn't overwritten when the next seed's training runs.
+        if step_num == 4 and result.returncode == 0:
+            src = REPO_ROOT / "results" / "textgrad_validation" / "latest" / "final_synthesizer_prompt.txt"
+            if not src.exists():
+                src = REPO_ROOT / "results" / "textgrad_validation" / "final_synthesizer_prompt.txt"
+            backup = REPO_ROOT / "results" / "textgrad_validation" / f"prompt_seed_{seed}.txt"
+            if src.exists():
+                shutil.copy(src, backup)
+                print(f"  ✓ Prompt backed up to {backup.name}")
+
         if result.returncode != 0:
             print(f"\n✗ Failed at: {label}" + (f" ({seed_label})" if multi_seed else ""))
             sync_to_drive(f"{label} (partial — failed)")
