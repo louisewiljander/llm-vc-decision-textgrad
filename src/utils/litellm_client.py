@@ -37,7 +37,8 @@ class CachedLLMClient:
     Falls back gracefully if LiteLLM unavailable.
     """
 
-    # Anthropic pricing (per 1M tokens)
+    # Anthropic pricing (per 1M tokens) — rates verified 2026-05.
+    # NOTE: Update before reporting cost estimates: https://www.anthropic.com/pricing
     ANTHROPIC_PRICING = {
         "input": 3.0,           # $3 per 1M input tokens
         "output": 15.0,         # $15 per 1M output tokens
