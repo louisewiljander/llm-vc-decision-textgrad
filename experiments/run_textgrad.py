@@ -68,7 +68,7 @@ from src.utils.archive import make_run_dir
 
 RESULTS_DIR = Path("results/textgrad_validation")
 EXPERIMENTS_LOG_DIR = Path(__file__).resolve().parent / "textgrad logs"
-MODEL_NAME = "ollama/glm4:latest"              # Forward model: synthesizer during TextGrad training + analyst assessments
+MODEL_NAME = "ollama/glm4:9b"                  # Forward model: synthesizer during TextGrad training + analyst assessments
 BACKWARD_MODEL_NAME = "groq/llama-3.3-70b-versatile"    # Backward model: generates textual gradients (needs stronger instruction-following than forward)
 
 # Configure logging to experiments/textgrad logs/

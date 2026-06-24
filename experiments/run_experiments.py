@@ -60,7 +60,7 @@ def sync_to_drive(step_label: str) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ── RUN CONFIGURATION ─────────────────────────────────────────────────────────
-MODEL  = "ollama/glm4:latest"
+MODEL  = "ollama/glm4:9b"
 SPLIT  = "val"    # "train" | "val" | "test"
 SAMPLE = 100       # rows per ablation condition (None = full split)
 N_TRAIN = 3       # TextGrad training steps

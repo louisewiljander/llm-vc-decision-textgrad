@@ -552,9 +552,9 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="ollama/glm4:latest",
+        default="ollama/glm4:9b",
         help="Model to use (ignored for random baseline). "
-        "Examples: ollama/glm4:latest, claude-haiku-4-5-20251001, ollama/mistral, ollama/qwen",
+        "Examples: ollama/glm4:9b, claude-haiku-4-5-20251001, ollama/mistral, ollama/qwen",
     )
     parser.add_argument(
         "--split",
