@@ -114,37 +114,12 @@ class InvestorAgent(BaseAgent):
         )
 
         response = self.call(user_message, temperature=0.2, max_tokens=2048)
-
-        # Strip markdown code fences if present
-        text = response.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.rsplit("```", 1)[0]
-
-        try:
-            result = json.loads(text.strip())
+        result = self._parse_json_response(response, {"probability_float": 0.5})  # fallback — treated as uncertain
+        if not result.get("parse_error"):
             # Normalise probability to 0–1 float for metrics pipeline
             result["probability_raw"] = result.get("probability", 50)
             result["probability_float"] = result["probability_raw"] / 100.0
-            return result
-        except json.JSONDecodeError:
-            # Try to repair incomplete JSON (missing closing brace)
-            repaired = text.strip()
-            if repaired and not repaired.endswith("}"):
-                repaired += "}"
-            try:
-                result = json.loads(repaired)
-                result["probability_raw"] = result.get("probability", 50)
-                result["probability_float"] = result["probability_raw"] / 100.0
-                return result
-            except json.JSONDecodeError:
-                return {
-                    "raw_response": response,
-                    "parse_error": True,
-                    "probability_float": 0.5,  # fallback — treated as uncertain
-                }
+        return result
 
 
 if __name__ == "__main__":

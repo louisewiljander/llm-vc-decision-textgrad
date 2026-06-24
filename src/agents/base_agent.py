@@ -1,6 +1,7 @@
 """
 Base agent class using cached LLM client.
 """
+import json
 from pathlib import Path
 from src.utils.litellm_client import CachedLLMClient
 
@@ -62,6 +63,41 @@ class BaseAgent:
             **kwargs
         )
     
+    @staticmethod
+    def _parse_json_response(response: str, fallback_extra: dict | None = None) -> dict:
+        """
+        Strip markdown fences, parse JSON, attempt single-brace repair on failure.
+
+        Args:
+            response: Raw LLM response string.
+            fallback_extra: Extra fields merged into the error dict on total parse failure.
+
+        Returns:
+            Parsed dict, or {raw_response, parse_error: True, ...fallback_extra} on failure.
+        """
+        # Strip markdown if present
+        text = response.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.rsplit("```", 1)[0]
+
+        try:
+            return json.loads(text.strip())
+        except json.JSONDecodeError:
+            # Try to repair incomplete JSON (e.g., missing closing brace)
+            repaired = text.strip()
+            if repaired and not repaired.endswith("}"):
+                repaired += "}"
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                error: dict = {"raw_response": response, "parse_error": True}
+                if fallback_extra:
+                    error.update(fallback_extra)
+                return error
+
     def get_logs(self, limit: int = 50) -> list:
         """Get logs for this agent."""
         return self.llm_client.get_logs(agent_name=self.agent_name, limit=limit)

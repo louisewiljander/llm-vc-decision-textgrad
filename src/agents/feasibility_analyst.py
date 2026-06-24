@@ -9,7 +9,6 @@ Evaluates:
 
 Output: Binary decision (PROMISING/NOT_PROMISING) + confidence (0-100) + rationale
 """
-import json
 from src.agents.base_agent import BaseAgent
 
 
@@ -76,28 +75,4 @@ class FeasibilityAnalyst(BaseAgent):
         )
 
         response = self.call(user_message, temperature=0, max_tokens=256)
-
-        # Strip markdown if present
-        text = response.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.rsplit("```", 1)[0]
-
-        try:
-            result = json.loads(text.strip())
-            return result
-        except json.JSONDecodeError:
-            # Try to repair incomplete JSON (e.g., missing closing brace)
-            repaired = text.strip()
-            if repaired and not repaired.endswith("}"):
-                repaired += "}"
-            try:
-                result = json.loads(repaired)
-                return result
-            except json.JSONDecodeError:
-                return {
-                    "raw_response": response,
-                    "parse_error": True,
-                }
+        return self._parse_json_response(response)
