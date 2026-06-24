@@ -42,13 +42,13 @@ Market Analyst   Business Model Analyst   Feasibility Analyst   Team Analyst
 
 ### TextGrad Optimization
 
-The synthesizer's system prompt is the learnable variable. TextGrad trains it on a small set of cached analyst assessments using an LLM-as-judge loss:
+The synthesizer's system prompt is the learnable variable. TextGrad trains it on a set of analyst assessments using an LLM-as-judge loss:
 
 ```
-Cached analyst assessments
+Analyst assessments
         │
         ▼
-  SynthesizerModel(prompt=tg.Variable, requires_grad=True)
+  Synthesizer(system_prompt=tg.Variable, requires_grad=True)
         │
         ▼
   Binary decision + probability
@@ -57,10 +57,10 @@ Cached analyst assessments
   LLM Judge  ← compares decision to ground-truth label, writes textual gradient
         │
         ▼
-  TextualGradientDescent → rewrites synthesizer prompt
+  TextualGradientDescent → rewrites synthesizer system prompt
 ```
 
-- **Forward model** (synthesizer): `ollama/glm4:latest` (local, free)
+- **Forward model** (synthesizer): `ollama/glm4:9b` (local, free)
 - **Backward model** (gradient generator): `groq/llama-3.3-70b-versatile` (stronger instruction-following)
 
 ### Judge Evaluation
@@ -95,7 +95,7 @@ GROQ_API_KEY=gsk_...          # required for judge + TextGrad backward pass
 ANTHROPIC_API_KEY=sk-ant-...  # optional — if running Claude models via LiteLLM
 ```
 
-Ollama must be running locally for `ollama/glm4:latest` (the default forward model):
+Ollama must be running locally for `ollama/glm4:9b` (the default forward model):
 ```bash
 ollama serve
 ollama pull glm4
@@ -110,23 +110,23 @@ python experiments/run_experiments.py
 
 Edit the `RUN CONFIGURATION` block at the top of `run_experiments.py` to control sample sizes, models, and step counts.
 
-### 4. Run Individual Steps
+### 4. Run Individual Steps (Choose data split train/val/test as needed)
 
 ```bash
 # Random baseline
-python experiments/run_ablation.py --ablation random --split val
+python experiments/run_ablation.py --ablation random --split test
 
 # Single agent (any LiteLLM-compatible model)
-python experiments/run_ablation.py --ablation single --model ollama/glm4:latest --split val --sample 50
+python experiments/run_ablation.py --ablation single --model ollama/glm4:9b --split test --sample None
 
 # Multi-analyst pipeline
-python experiments/run_ablation.py --ablation multi --model ollama/glm4:latest --split val
+python experiments/run_ablation.py --ablation multi --model ollama/glm4:9b --split test
 
 # TextGrad training
-python experiments/run_textgrad.py --n_train 4 --n_val 30
+python experiments/run_textgrad.py --n_train 3 --n_val 100
 
 # TextGrad ablation evaluation (uses optimized prompt from results/)
-python experiments/run_ablation.py --ablation textgrad --model ollama/glm4:latest --split val
+python experiments/run_ablation.py --ablation textgrad --model ollama/glm4:9b --split test
 
 # LLM-as-judge evaluation
 python experiments/run_judge_evaluation.py --n_sample 10 --judge_model groq/llama-3.3-70b-versatile
@@ -233,14 +233,7 @@ Judge evaluation writes to `results/judge_evaluation/`:
 TextGrad training saves a checkpoint after each step. Resume with:
 
 ```bash
-python experiments/run_textgrad.py --n_train 10 --n_val 30 --resume_from_step 3
-```
-
-Judge evaluation can also resume from a partial JSONL:
-
-```bash
-python experiments/run_judge_evaluation.py \
-    --resume_from results/judge_evaluation/judge_scores_incremental.jsonl
+python experiments/run_textgrad.py --resume_from_step 3
 ```
 
 ## Running on Colab
@@ -261,7 +254,7 @@ Any LiteLLM-compatible model string works for the analyst and synthesizer agents
 
 ```bash
 # Local Ollama
---model ollama/glm4:latest
+--model ollama/glm4:9b
 
 # Claude via Anthropic
 --model claude-haiku-4-5-20251001
