@@ -12,6 +12,7 @@ Logs all API calls to CSV and JSON (JSONL) formats.
 import json
 import csv
 import hashlib
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any
@@ -289,17 +290,32 @@ class CachedLLMClient:
         effective_max_tokens = min(max_tokens, 512) if is_ollama else max_tokens
         timeout = 7200 if is_ollama else 600  # 2 h for CPU, 10 min for APIs
 
-        response = litellm.completion(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            max_tokens=effective_max_tokens,
-            temperature=temperature,
-            timeout=timeout,
-            **kwargs,
-        )
+        # Ollama's llama.cpp subprocess can die mid-run (EOF error) due to GPU
+        # memory pressure. Retry a few times with a short backoff — Ollama
+        # usually restarts the backend within seconds.
+        _ollama_eof_retries = 3 if is_ollama else 0
+        for _attempt in range(_ollama_eof_retries + 1):
+            try:
+                response = litellm.completion(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    max_tokens=effective_max_tokens,
+                    temperature=temperature,
+                    timeout=timeout,
+                    **kwargs,
+                )
+                break  # success
+            except Exception as _e:
+                _is_eof = "EOF" in str(_e) or "Connection refused" in str(_e)
+                if _is_eof and _attempt < _ollama_eof_retries:
+                    _wait = 10 * (2 ** _attempt)  # 10s, 20s, 40s
+                    print(f"  ⚠  Ollama backend crash (attempt {_attempt + 1}/{_ollama_eof_retries + 1}), retrying in {_wait}s...")
+                    time.sleep(_wait)
+                else:
+                    raise
 
         # Extract content from ModelResponse object (standard LiteLLM format)
         content = ""
