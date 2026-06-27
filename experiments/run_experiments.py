@@ -29,7 +29,9 @@ JUDGE    = str(REPO_ROOT / "experiments" / "run_judge_evaluation.py")
 
 # ── GOOGLE DRIVE SYNC ─────────────────────────────────────────────────────────
 # Set to your Drive results path when running on Colab; None to skip.
-DRIVE_RESULTS = None  # e.g. "/content/drive/MyDrive/llm-vc-decision-textgrad/results"
+# Can also be set via the DRIVE_RESULTS environment variable.
+import os as _os
+DRIVE_RESULTS = _os.environ.get("DRIVE_RESULTS", None)
 
 def print_split_verification(seed: int) -> None:
     df_train, df_val, df_test = get_splits(random_state=seed)
@@ -110,9 +112,22 @@ for seed_idx, seed in enumerate(seeds):
     # Create run directories upfront so all sub-scripts share the same timestamp.
     # Seed is embedded in RUN_TIMESTAMP (_s{seed}), so runs from different seeds
     # never collide even when writing to the same top-level results/ dirs.
-    abl_run_dir = make_run_dir(REPO_ROOT / "results" / "ablation",            timestamp=RUN_TIMESTAMP)
-    tg_run_dir  = make_run_dir(REPO_ROOT / "results" / "textgrad_validation", timestamp=RUN_TIMESTAMP)
-    jdg_run_dir = make_run_dir(REPO_ROOT / "results" / "judge_evaluation",    timestamp=RUN_TIMESTAMP)
+    abl_run_dir = make_run_dir(REPO_ROOT / "results" / "ablation",         timestamp=RUN_TIMESTAMP)
+    jdg_run_dir = make_run_dir(REPO_ROOT / "results" / "judge_evaluation", timestamp=RUN_TIMESTAMP)
+
+    # Create a textgrad run dir for this seed.
+    # When training (step 4) runs, the script writes its output here.
+    # When training is skipped, we create the dir and immediately populate it
+    # with this seed's backed-up prompt — so `latest` always points to the
+    # correct prompt for the current seed, without clobbering other seeds.
+    tg_run_dir = make_run_dir(REPO_ROOT / "results" / "textgrad_validation", timestamp=RUN_TIMESTAMP)
+    if 4 in excluded_steps:
+        backup = REPO_ROOT / "results" / "textgrad_validation" / f"prompt_seed_{seed}.txt"
+        if backup.exists():
+            shutil.copy(backup, tg_run_dir / "final_synthesizer_prompt.txt")
+            print(f"  ✓ Seeded run dir with prompt for seed {seed} → {tg_run_dir.name}/")
+        else:
+            print(f"  ⚠  No prompt backup for seed {seed} — TextGrad eval will use whatever is in latest/")
 
     STEPS = [
         (1, "Step 1/6 — Random baseline",     [PY, ABLATION, "--ablation", "random",   "--split", SPLIT, "--seed", str(seed), "--output_dir", str(abl_run_dir)] + _sample_args),
@@ -129,18 +144,18 @@ for seed_idx, seed in enumerate(seeds):
             continue
         print(f"\n{'='*60}\n  {label}\n{'='*60}\n")
 
-        # Before TextGrad eval (step 5), restore the seed's trained prompt if a
-        # backup exists. This ensures the correct prompt is loaded when running
-        # test-set evaluation after training has already completed on a prior run.
+        # Before TextGrad eval (step 5), restore the seed's trained prompt.
+        # Always write to the flat location — TextGradSynthesizer checks this
+        # first when `latest` doesn't exist, and as a fallback when it does.
+        # We avoid touching `latest` to prevent clobbering another seed's folder.
         if step_num == 5:
             backup = REPO_ROOT / "results" / "textgrad_validation" / f"prompt_seed_{seed}.txt"
             if backup.exists():
                 flat = REPO_ROOT / "results" / "textgrad_validation" / "final_synthesizer_prompt.txt"
                 shutil.copy(backup, flat)
-                latest = REPO_ROOT / "results" / "textgrad_validation" / "latest"
-                if latest.exists():
-                    shutil.copy(backup, latest.resolve() / "final_synthesizer_prompt.txt")
-                print(f"  ✓ Restored prompt for seed {seed} from {backup.name}")
+                print(f"  ✓ Restored prompt for seed {seed} → {flat.name}")
+            else:
+                print(f"  ⚠  No prompt backup found for seed {seed} — using whatever is in latest/")
 
         result = subprocess.run(cmd, cwd=REPO_ROOT)
 
