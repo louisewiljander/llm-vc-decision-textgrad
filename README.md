@@ -1,6 +1,6 @@
 # LLM-based Multi-Agent VC Decision Simulation — TextGrad Optimization
 
-An ablation study comparing LLM-based VC decision-making architectures, with prompt optimization via TextGrad. Built on the 2013 Crunchbase snapshot; evaluated against historical exit outcomes.
+An ablation study comparing LLM-based VC decision-making architectures, with prompt optimization via TextGrad, for the purpose of predicting startup success. Built on the 2013 Crunchbase snapshot; evaluated against historical exit outcomes.
 
 ## Project Goals
 
