@@ -569,24 +569,42 @@ def run_textgrad_optimization(
             pred_correct = False
 
         # ── Backward pass + optimizer step (with rate-limit retry) ───────────
-        # Groq TPD cap (100K tokens/day) can hit mid-backward-pass. If it does,
-        # sleep until the limit resets and retry the whole backward+step pair.
+        # Groq TPD (100K/day) and TPM (12K/min) limits can both hit here.
+        # textgrad wraps its own calls in tenacity, so the exception we receive
+        # may be a tenacity.RetryError whose str() contains "RateLimitError".
+        # We catch both the original type name and the string representation.
+        import re as _re_rl, time as _time_rl
+
+        def _is_rate_limit(exc):
+            _s = str(exc)
+            return ("rate_limit" in _s.lower() or "429" in _s or
+                    "RateLimitError" in type(exc).__name__ or
+                    "RateLimitError" in _s)
+
+        def _parse_wait_s(msg, default=90):
+            """Parse Groq 'try again in Xm Ys' or 'try again in X.Xs' → seconds."""
+            m = _re_rl.search(r'try again in (\d+)m(\d+(?:\.\d+)?)', msg)
+            if m:
+                return int(m.group(1)) * 60 + int(float(m.group(2))) + 30
+            m = _re_rl.search(r'try again in (\d+(?:\.\d+)?)s', msg)
+            if m:
+                return int(float(m.group(1))) + 30
+            return default
+
         _MAX_RL_RETRIES = 5
-        _RL_SLEEP_S     = 90   # seconds to wait on 429 before retrying
         for _rl_attempt in range(_MAX_RL_RETRIES):
             try:
                 print("  [Backward pass...]")
                 loss.backward()
                 break   # success — exit retry loop
             except Exception as _e:
-                _msg = str(_e)
-                if "rate_limit" in _msg.lower() or "429" in _msg or "RateLimitError" in type(_e).__name__:
+                if _is_rate_limit(_e):
                     if _rl_attempt < _MAX_RL_RETRIES - 1:
-                        import time as _time
+                        _wait = _parse_wait_s(str(_e))
                         print(f"\n  ⚠ Groq rate limit hit during backward pass "
                               f"(attempt {_rl_attempt + 1}/{_MAX_RL_RETRIES}). "
-                              f"Sleeping {_RL_SLEEP_S}s before retry...")
-                        _time.sleep(_RL_SLEEP_S)
+                              f"Sleeping {_wait}s before retry...")
+                        _time_rl.sleep(_wait)
                         # Reset gradients so we can redo the backward cleanly
                         optimizer.zero_grad()
                     else:
@@ -629,22 +647,17 @@ def run_textgrad_optimization(
                 print("  [Manual guidance added to prompt]")
                 break  # IndexError is not retryable
             except Exception as _oe:
-                _msg = str(_oe)
-                if ("rate_limit" in _msg.lower() or "429" in _msg or
-                        "RateLimitError" in type(_oe).__name__):
+                if _is_rate_limit(_oe):
                     if _opt_attempt < _MAX_OPT_RETRIES - 1:
-                        import re as _re_opt
-                        import time as _time_opt
-                        # Parse "Please try again in Xm Ys" from the Groq error body
-                        _match = _re_opt.search(r'try again in (\d+)m(\d+(?:\.\d+)?)', _msg)
-                        if _match:
-                            _wait_s = int(_match.group(1)) * 60 + int(float(_match.group(2))) + 120
-                        else:
-                            _wait_s = 2400  # 40-min fallback
-                        print(f"\n  ⚠ Groq TPD limit hit during optimizer.step() "
+                        # TPM errors need only ~30s; TPD errors need hours.
+                        # Parse actual wait from error message; use 90s default for TPM.
+                        _wait_s = _parse_wait_s(str(_oe), default=90)
+                        # If wait is short (<5 min) it's a TPM limit; if long it's TPD.
+                        _kind = "TPM" if _wait_s < 300 else "TPD"
+                        print(f"\n  ⚠ Groq {_kind} limit hit during optimizer.step() "
                               f"(attempt {_opt_attempt + 1}/{_MAX_OPT_RETRIES}). "
                               f"Sleeping {_wait_s}s (~{_wait_s // 60} min) before retry...")
-                        _time_opt.sleep(_wait_s)
+                        _time_rl.sleep(_wait_s)
                     else:
                         print(f"\n  ✗ Rate limit still active after {_MAX_OPT_RETRIES} retries. "
                               f"Resume with --resume_from_step {step}.")
