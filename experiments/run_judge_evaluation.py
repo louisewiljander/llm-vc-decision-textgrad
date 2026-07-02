@@ -341,7 +341,9 @@ def main():
 
     # Sample
     import random
+    import numpy as np
     random.seed(args.seed)
+    np.random.seed(args.seed)
     sample_ids = random.sample(sorted(common_ids), args.n_sample)
 
     # ─── Run judge ─────────────────────────────────────────────────────────────

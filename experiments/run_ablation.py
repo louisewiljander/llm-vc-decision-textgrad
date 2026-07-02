@@ -22,6 +22,7 @@ import argparse
 import json
 import time
 import random
+import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -68,6 +69,7 @@ def run_random_baseline(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     random.seed(random_state)
+    np.random.seed(random_state)
 
     predictions_path = output_dir / f"random_{split_name}_predictions.jsonl"
     results = []

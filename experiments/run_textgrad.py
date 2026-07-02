@@ -41,6 +41,7 @@ import sys
 import json
 import time
 import re
+import random
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -385,6 +386,9 @@ def run_textgrad_optimization(
     print("=" * 70)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    random.seed(seed)
+    np.random.seed(seed)
 
     # ─── Load data ────────────────────────────────────────────────────────────
     print("\n[PHASE 1: Data Preparation & Caching]")
