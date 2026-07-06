@@ -213,11 +213,12 @@ def load_predictions(path: Path) -> dict:
     return preds
 
 
-def find_prediction_file(condition: str, ablation_dir: Path) -> Path | None:
-    """Auto-discover the most recent predictions file for a condition."""
+def find_prediction_file(condition: str, ablation_dir: Path, split: str = "test") -> Path | None:
+    """Auto-discover the most recent predictions file for a condition and split."""
+    pattern = f"{condition}_{split}_*_predictions.jsonl"
     # Check the given dir directly (works for both explicit run dirs and latest/)
     matches = sorted(
-        ablation_dir.glob(f"{condition}_val_*_predictions.jsonl"),
+        ablation_dir.glob(pattern),
         key=lambda p: p.stat().st_mtime,
     )
     if matches:
@@ -226,14 +227,14 @@ def find_prediction_file(condition: str, ablation_dir: Path) -> Path | None:
     runs_dir = ablation_dir / "runs"
     if runs_dir.exists():
         for run_subdir in sorted(runs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-            matches = sorted(run_subdir.glob(f"{condition}_val_*_predictions.jsonl"))
+            matches = sorted(run_subdir.glob(pattern))
             if matches:
                 return matches[-1]
     # Legacy fallback: old archive/ subdirs
     archive_dir = ablation_dir / "archive"
     if archive_dir.exists():
         for archive in sorted(archive_dir.iterdir(), reverse=True):
-            matches = sorted(archive.glob(f"{condition}_val_*_predictions.jsonl"))
+            matches = sorted(archive.glob(pattern))
             if matches:
                 return matches[-1]
     return None
@@ -263,6 +264,8 @@ def main():
                         help="Directory to write results (default: new timestamped run under results/judge_evaluation/runs/)")
     parser.add_argument("--ablation_dir", type=str, default=None,
                         help="Directory containing ablation prediction files (default: results/ablation/latest)")
+    parser.add_argument("--split", type=str, default="test", choices=["val", "test"],
+                        help="Which split's predictions to evaluate (default: test)")
     args = parser.parse_args()
 
     if args.output_dir:
@@ -305,9 +308,9 @@ def main():
     print("Locating prediction files...\n")
 
     paths = {
-        "single":   Path(args.single) if args.single else find_prediction_file("single", ablation_dir),
-        "multi":    Path(args.multi) if args.multi else find_prediction_file("multi", ablation_dir),
-        "textgrad": Path(args.textgrad) if args.textgrad else find_prediction_file("textgrad", ablation_dir),
+        "single":   Path(args.single) if args.single else find_prediction_file("single", ablation_dir, args.split),
+        "multi":    Path(args.multi) if args.multi else find_prediction_file("multi", ablation_dir, args.split),
+        "textgrad": Path(args.textgrad) if args.textgrad else find_prediction_file("textgrad", ablation_dir, args.split),
     }
 
     for name, path in paths.items():
