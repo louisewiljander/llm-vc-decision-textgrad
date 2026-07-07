@@ -22,6 +22,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.utils.data_splits import get_splits
 from src.utils.archive import make_run_dir
+
+# Fixed seed for dataset splitting — decoupled from the training/inference seed.
+# All experiment seeds evaluate on the identical train/val/test partition.
+SPLIT_SEED = 42
 PY = sys.executable
 ABLATION = str(REPO_ROOT / "experiments" / "run_ablation.py")
 TEXTGRAD = str(REPO_ROOT / "experiments" / "run_textgrad.py")
@@ -34,7 +38,7 @@ import os as _os
 DRIVE_RESULTS = _os.environ.get("DRIVE_RESULTS", None)
 
 def print_split_verification(seed: int) -> None:
-    df_train, df_val, df_test = get_splits(random_state=seed)
+    df_train, df_val, df_test = get_splits(random_state=SPLIT_SEED)
     split_map = {"train": df_train, "val": df_val, "test": df_test}
     df = split_map[SPLIT]
     if SAMPLE is not None:

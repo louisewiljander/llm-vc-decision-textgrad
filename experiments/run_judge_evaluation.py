@@ -386,6 +386,7 @@ def main():
         startup_name = preds["single"][object_id].get("name", object_id)
         target = preds["single"][object_id].get("target")
         profile = profile_map.get(object_id, "Profile not available")
+        startup_label = f"{startup_name} ({object_id})"
 
         conditions_todo = [
             c for c in ["single", "multi", "textgrad"]
@@ -393,10 +394,10 @@ def main():
             and (startup_name, c) not in already_done
         ]
         if not conditions_todo:
-            print(f"\nStartup: {startup_name} — already done, skipping.")
+            print(f"\nStartup: {startup_label} — already done, skipping.")
             continue
 
-        print(f"\nStartup: {startup_name} (target={'INVEST' if target == 1 else 'PASS'})")
+        print(f"\nStartup: {startup_label} (target={'INVEST' if target == 1 else 'PASS'})")
         print("-" * 70)
 
         for condition in conditions_todo:

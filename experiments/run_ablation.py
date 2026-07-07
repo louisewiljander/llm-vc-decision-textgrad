@@ -46,6 +46,12 @@ from src.utils.archive import make_run_dir
 
 RESULTS_DIR = Path("results/ablation")
 
+# Fixed seed for dataset splitting — decoupled from the training/inference seed
+# so that all experiment seeds evaluate on the identical train/val/test partition.
+# Only the model-level randomness (synthesizer temperature, TextGrad trajectory)
+# varies across seeds. Do NOT change this without re-running all experiments.
+SPLIT_SEED = 42
+
 
 
 def run_random_baseline(
@@ -596,8 +602,9 @@ def main():
     else:
         output_dir = make_run_dir(RESULTS_DIR.resolve())
 
-    # Load splits
-    df_train, df_val, df_test = get_splits(random_state=args.seed)
+    # Load splits — always use SPLIT_SEED (not the training seed) so all
+    # experiment seeds evaluate on the same train/val/test partition.
+    df_train, df_val, df_test = get_splits(random_state=SPLIT_SEED)
     split_map = {"train": df_train, "val": df_val, "test": df_test}
     df_eval = split_map[args.split]
 
