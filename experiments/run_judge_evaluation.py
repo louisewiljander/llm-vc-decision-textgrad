@@ -266,6 +266,10 @@ def main():
                         help="Directory containing ablation prediction files (default: results/ablation/latest)")
     parser.add_argument("--split", type=str, default="test", choices=["val", "test"],
                         help="Which split's predictions to evaluate (default: test)")
+    parser.add_argument("--n_invest", type=int, default=None,
+                        help="Number of INVEST (positive) startups in the sample. "
+                             "Defaults to max(1, round(n_sample * 0.3)), i.e. 30%% of the sample. "
+                             "Remaining slots are filled with PASS startups.")
     args = parser.parse_args()
 
     if args.output_dir:
@@ -342,12 +346,33 @@ def main():
         if row["object_id"] in common_ids
     }
 
-    # Sample
+    # ─── Stratified sample (INVEST / PASS) ────────────────────────────────────
     import random
     import numpy as np
     random.seed(args.seed)
     np.random.seed(args.seed)
-    sample_ids = random.sample(sorted(common_ids), args.n_sample)
+
+    # Split common ids by ground-truth label (use single-agent preds as source of truth)
+    invest_ids = sorted(oid for oid in common_ids if preds["single"][oid].get("target") == 1)
+    pass_ids   = sorted(oid for oid in common_ids if preds["single"][oid].get("target") == 0)
+
+    n_invest = args.n_invest if args.n_invest is not None else max(1, round(args.n_sample * 0.3))
+    n_pass   = args.n_sample - n_invest
+
+    if n_invest > len(invest_ids):
+        print(f"⚠  Requested {n_invest} INVEST startups but only {len(invest_ids)} available — using all.")
+        n_invest = len(invest_ids)
+        n_pass   = min(n_pass, args.n_sample - n_invest)
+    if n_pass > len(pass_ids):
+        print(f"⚠  Requested {n_pass} PASS startups but only {len(pass_ids)} available — using all.")
+        n_pass = len(pass_ids)
+
+    sampled_invest = random.sample(invest_ids, n_invest)
+    sampled_pass   = random.sample(pass_ids,   n_pass)
+    sample_ids     = sampled_invest + sampled_pass
+    random.shuffle(sample_ids)  # interleave so INVEST cases aren't all first
+
+    print(f"\nStratified sample: {n_invest} INVEST + {n_pass} PASS = {len(sample_ids)} startups.")
 
     # ─── Run judge ─────────────────────────────────────────────────────────────
     print(f"Running judge ({args.judge_model}) on {args.n_sample} startups × 3 conditions...\n")
