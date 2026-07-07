@@ -268,7 +268,7 @@ def main():
                         help="Which split's predictions to evaluate (default: test)")
     parser.add_argument("--n_invest", type=int, default=None,
                         help="Number of INVEST (positive) startups in the sample. "
-                             "Defaults to max(1, round(n_sample * 0.3)), i.e. 30%% of the sample. "
+                             "Defaults to n_sample // 2 (50/50 split). "
                              "Remaining slots are filled with PASS startups.")
     args = parser.parse_args()
 
@@ -356,7 +356,7 @@ def main():
     invest_ids = sorted(oid for oid in common_ids if preds["single"][oid].get("target") == 1)
     pass_ids   = sorted(oid for oid in common_ids if preds["single"][oid].get("target") == 0)
 
-    n_invest = args.n_invest if args.n_invest is not None else max(1, round(args.n_sample * 0.3))
+    n_invest = args.n_invest if args.n_invest is not None else args.n_sample // 2
     n_pass   = args.n_sample - n_invest
 
     if n_invest > len(invest_ids):
