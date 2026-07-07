@@ -4,57 +4,8 @@ Startup profile formatting for LLM input.
 Converts raw Crunchbase rows into structured text prompts,
 using anonymised text fields to avoid company name leakage.
 """
-import json
 import pandas as pd
 from typing import Optional
-
-
-def get_round_summary_from_row(row: pd.Series) -> Optional[str]:
-    """
-    Extract round-by-round funding summary from row's funding_round_details column.
-    
-    Expects 'funding_round_details' as list of dicts:
-    [
-        {'date': '2012-01-01', 'type': 'seed', 'amount': 500000},
-        {'date': '2013-06-01', 'type': 'series_a', 'amount': 5000000},
-    ]
-    
-    Returns formatted string like:
-    "FUNDING DETAILS:
-    - Seed (2012): $500,000
-    - Series A (2013): $5,000,000"
-    
-    Returns None if no round details available.
-    """
-    round_details = row.get("funding_round_details")
-    
-    if not round_details or (isinstance(round_details, float) and pd.isna(round_details)):
-        return None
-    
-    # Parse if stored as JSON string
-    if isinstance(round_details, str):
-        try:
-            round_details = json.loads(round_details)
-        except (json.JSONDecodeError, TypeError):
-            return None
-    
-    if not isinstance(round_details, list) or len(round_details) == 0:
-        return None
-    
-    lines = ["FUNDING DETAILS:"]
-    for round_info in round_details:
-        date_str = round_info.get("date", "")
-        round_type = round_info.get("type", "unknown").replace("_", " ").title()
-        amount = round_info.get("amount", 0)
-        
-        try:
-            year = pd.Timestamp(date_str).year
-            amount_str = f"${float(amount):,.0f}" if amount > 0 else "undisclosed"
-            lines.append(f"  - {round_type} ({year}): {amount_str}")
-        except Exception:
-            pass
-    
-    return "\n".join(lines) if len(lines) > 1 else None
 
 
 def format_startup_profile(row: pd.Series) -> str:
@@ -117,11 +68,6 @@ def format_startup_profile(row: pd.Series) -> str:
 
     if pd.notna(funding_rounds):
         lines.append(f"FUNDING ROUNDS: {int(funding_rounds)}")
-
-    # Round-by-round funding details (type, amount, date for each round)
-    round_summary = get_round_summary_from_row(row)
-    if round_summary:
-        lines.append(round_summary)
 
     # Time since last funding round (proxy for funding recency / momentum)
     last_funding = row.get("last_funding_at")
