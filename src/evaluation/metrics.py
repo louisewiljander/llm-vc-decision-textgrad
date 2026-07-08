@@ -1,16 +1,21 @@
 """
 Evaluation metrics for startup success prediction.
 
-Mirrors the metric set used in Maarouf et al. (2025):
-  - Average Precision at K (AP@K, primary metric per Liu et al.)
+Primary metrics (Liu et al. 2025 comparison):
+  - P@K (Precision at K, K=10,20,30): fraction of successful startups in the
+    top-K recommendations ranked by predicted probability.
+
+Secondary metrics (Maarouf et al. 2025 comparison):
   - Balanced accuracy
   - Precision, Recall, F1
   - AUROC
+
+Additional ranking metric:
   - AUCPR
 
-Probabilities are used for threshold-independent metrics (AUROC, AUCPR, AP@K),
+Probabilities are used for threshold-independent metrics (AUROC, AUCPR, P@K),
 while binary predictions (using a configurable threshold) are used for
-accuracy, precision, recall, and F1.
+balanced accuracy, precision, recall, and F1.
 """
 from typing import Optional
 import numpy as np
@@ -29,8 +34,6 @@ try:
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-
-from src.evaluation.ap_at_k import compute_ap_at_k
 
 
 def compute_metrics(
@@ -52,6 +55,7 @@ def compute_metrics(
     Returns:
         Dictionary with keys:
             n, n_positive, n_negative, base_rate,
+            p_10, p_20, p_30,
             auroc, aucpr,
             balanced_accuracy, precision, recall, f1,
             threshold, tp, fp, tn, fn,
@@ -102,18 +106,22 @@ def compute_metrics(
     # Prediction bias: a positive value means the model over-predicts success
     prediction_bias = float(y_prob.mean()) - base_rate
 
-    # AP@K metrics (primary per Liu et al.)
-    ap_metrics = compute_ap_at_k(y_true, y_prob, k_values=[10, 20, 30])
+    # P@K: fraction of positives in top-K ranked by predicted probability.
+    # Comparable to Liu et al. (2025), who report temporal Average P@K
+    # (P@K per prediction period, averaged over time).
+    sorted_indices = np.argsort(-y_prob)
+    y_true_sorted = y_true[sorted_indices]
+    p_at_k = {k: round(float(y_true_sorted[:k].sum()) / k, 4) for k in [10, 20, 30]}
 
     return {
         "n": n,
         "n_positive": n_positive,
         "n_negative": n_negative,
         "base_rate": round(base_rate, 4),
-        # Primary metrics
-        "ap_10": ap_metrics["ap_10"],
-        "ap_20": ap_metrics["ap_20"],
-        "ap_30": ap_metrics["ap_30"],
+        # Primary metrics — P@K (Liu et al. 2025)
+        "p_10": p_at_k[10],
+        "p_20": p_at_k[20],
+        "p_30": p_at_k[30],
         # Secondary metrics
         "auroc": round(auroc, 4),
         "aucpr": round(aucpr, 4),
@@ -138,10 +146,10 @@ def print_metrics(metrics: dict, label: str = "Results") -> None:
     print(f"  Dataset:   n={metrics['n']}  "
           f"(+:{metrics['n_positive']}  -:{metrics['n_negative']}  "
           f"base rate: {metrics['base_rate']:.1%})")
-    print(f"\n  PRIMARY METRICS (AP@K per Liu et al.):")
-    print(f"    AP@10:     {metrics['ap_10']:.4f}")
-    print(f"    AP@20:     {metrics['ap_20']:.4f}")
-    print(f"    AP@30:     {metrics['ap_30']:.4f}")
+    print(f"\n  PRIMARY METRICS (P@K, Liu et al. 2025):")
+    print(f"    P@10:      {metrics['p_10']:.4f}")
+    print(f"    P@20:      {metrics['p_20']:.4f}")
+    print(f"    P@30:      {metrics['p_30']:.4f}")
     print(f"\n  SECONDARY METRICS:")
     print(f"    AUROC:     {metrics['auroc']:.4f}")
     print(f"    AUCPR:     {metrics['aucpr']:.4f}")

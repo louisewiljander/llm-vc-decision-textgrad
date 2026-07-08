@@ -293,7 +293,7 @@ def evaluate_synthesizer_on_val_set(
         cached_val_assessments: Dict of cached assessments
     
     Returns:
-        Dict with metrics: ap_10, ap_20, ap_30, balanced_accuracy, weighted_f1, auroc
+        Dict with metrics: p_10, p_20, p_30, balanced_accuracy, auroc, f1
     """
     y_true = []
     y_prob = []
@@ -351,12 +351,12 @@ def evaluate_synthesizer_on_val_set(
     metrics = compute_metrics(y_true, y_prob, threshold=0.5)
 
     return {
-        "ap_10": metrics.get("ap_10"),
-        "ap_20": metrics.get("ap_20"),
-        "ap_30": metrics.get("ap_30"),
+        "p_10": metrics.get("p_10"),
+        "p_20": metrics.get("p_20"),
+        "p_30": metrics.get("p_30"),
         "balanced_accuracy": metrics.get("balanced_accuracy"),
-        "weighted_f1": metrics.get("f1"),
         "auroc": metrics.get("auroc"),
+        "f1": metrics.get("f1"),
         "n_evaluated": metrics.get("n"),
     }
 
@@ -707,12 +707,12 @@ def run_textgrad_optimization(
             val_metrics = evaluate_synthesizer_on_val_set(synthesizer_model, val_assessments)
 
             print(f"\n  Validation Metrics:")
-            print(f"    AP@10: {val_metrics['ap_10']:.4f}")
-            print(f"    AP@20: {val_metrics['ap_20']:.4f}")
-            print(f"    AP@30: {val_metrics['ap_30']:.4f}")
+            print(f"    P@10:  {val_metrics['p_10']:.4f}")
+            print(f"    P@20:  {val_metrics['p_20']:.4f}")
+            print(f"    P@30:  {val_metrics['p_30']:.4f}")
             print(f"    Balanced Accuracy: {val_metrics['balanced_accuracy']:.4f}")
-            print(f"    Weighted F1: {val_metrics['weighted_f1']:.4f}")
             print(f"    AUROC: {val_metrics['auroc']:.4f}")
+            print(f"    F1:    {val_metrics['f1']:.4f}")
 
             # Log metrics
             metrics_record = {
