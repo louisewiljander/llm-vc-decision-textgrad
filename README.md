@@ -74,6 +74,57 @@ Post-hoc qualitative scoring with `groq/llama-3.3-70b-versatile` as judge. Six d
 5. Reasoning coherence
 6. Risk identification
 
+## Data
+
+### Source
+
+This project uses the **Crunchbase 2013 snapshot** from Kaggle:
+[`justinas/startup-investments`](https://www.kaggle.com/datasets/justinas/startup-investments)
+
+Download the dataset and place the CSV files in `data/raw/`. The following files are required:
+
+| File | Description |
+|------|-------------|
+| `objects.csv` | All Crunchbase entities (companies, investors, products) |
+| `funding_rounds.csv` | Per-round funding details |
+| `investments.csv` | Investor–round relationships |
+| `people.csv` | Founder and employee records |
+| `degrees.csv` | Educational background per person |
+| `relationships.csv` | Person–company affiliations |
+| `milestones.csv` | Company milestone events |
+
+Additionally, download the **2024 QS World University Rankings** CSV and place it at:
+`data/raw/2024 QS World University Rankings.csv`
+
+### Processing
+
+Run the two-step pipeline to produce the processed parquet files used by experiments:
+
+**Step 1** — split `objects.csv` into entity-specific tables:
+
+```bash
+python scripts/split_objects_by_entity_type.py
+```
+
+This produces `data/raw/companies.csv`, `data/raw/financial_orgs.csv`, and `data/raw/products.csv`.
+
+**Step 2** — run the full processing notebook:
+
+```bash
+jupyter nbconvert --to notebook --execute notebooks/data_processing.ipynb
+```
+
+This produces the processed files in `data/processed/`:
+
+| File | Contents |
+|------|----------|
+| `companies_clean.parquet` | Full cleaned dataset (2,653 rows) |
+| `companies_train.parquet` | Training split (~1,526 rows, 50/50 balanced) |
+| `companies_val.parquet` | Validation split (200 rows, 50/50 balanced) |
+| `companies_test.parquet` | Test split (300 rows, 10% positive) |
+
+The pipeline filters to companies with known outcomes (`acquired`, `ipo`, `closed`), founded 2005–2013, with a minimum overview length of 300 characters. It also anonymizes free-text fields to prevent company name leakage.
+
 ## Quick Start
 
 ### 1. Setup
@@ -162,7 +213,6 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │   ├── run_judge_evaluation.py # LLM-as-judge post-hoc evaluation
 │   └── legacy/
 │       └── run_baseline.py     # Archived baseline script
-
 ├── src/
 │   ├── agents/
 │   │   ├── base_agent.py               # LiteLLM wrapper with caching
@@ -193,8 +243,8 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │   ├── output_overview.ipynb           # Predictions overview 
 │   └── textgrad_visualization.ipynb    # TextGrad prompt evolution plots (WIP)
 │
-├── scripts/
-│   └── split_objects_by_entity_type.py # Data preprocessing utility
+└── scripts/
+    └── split_objects_by_entity_type.py # Data preprocessing utility
 ```
 
 Runtime artifacts and large datasets are intentionally excluded from GitHub via `.gitignore`, including `data/`, `results/`, notebook logs/checkpoints, and local environment files.
@@ -269,7 +319,3 @@ Any LiteLLM-compatible model string works for the analyst and synthesizer agents
 - Gompers et al. (2020) — VC decision criteria, team quality emphasis
 - Yuksekgonul et al. (2025) — TextGrad: Automatic Differentiation via Text
 - Liu et al. — AP@K as primary ranking metric
-
-## License
-
-MIT License — see LICENSE file for details.
