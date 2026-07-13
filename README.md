@@ -134,11 +134,11 @@ python experiments/run_judge_evaluation.py --n_sample 10 --judge_model groq/llam
 
 ## Evaluation Metrics
 
-Primary metric: **Average Precision at K** (AP@K, per Liu et al. 2026), capturing how well the model ranks successful startups in the top-K predictions.
+Primary metric: **Precision at K** (P@K, per Liu et al. 2025), capturing the fraction of successful startups in the top-K predictions ranked by predicted probability.
 
 | Metric | Description |
 |--------|-------------|
-| AP@10 / AP@20 / AP@30 | Primary: precision of top-K ranked predictions |
+| P@10 / P@20 / P@30 | Primary: precision of top-K ranked predictions |
 | AUROC | Threshold-independent discrimination |
 | Balanced accuracy | Corrects for class imbalance |
 | Precision / Recall / F1 | At default threshold of 0.5 |
@@ -149,12 +149,19 @@ All metrics are computed by `src/evaluation/metrics.py`.
 ## Directory Structure
 
 ```
+├── .gitignore
+├── ARCHITECTURE.md
+├── README.md
+├── pyproject.toml
+├── requirements.txt
+│
 ├── experiments/
 │   ├── run_experiments.py      # Orchestrator: runs all 6 pipeline steps
 │   ├── run_ablation.py         # Single ablation condition (random/single/multi/textgrad)
 │   ├── run_textgrad.py         # TextGrad synthesizer prompt optimization
 │   ├── run_judge_evaluation.py # LLM-as-judge post-hoc evaluation
-│   └── legacy/                 # Archived older scripts
+│   └── legacy/
+│       └── run_baseline.py     # Archived baseline script
 
 ├── src/
 │   ├── agents/
@@ -167,8 +174,7 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │   │   ├── synthesizer.py              # Fixed synthesizer (multi condition)
 │   │   └── textgrad_synthesizer.py     # Optimized synthesizer (textgrad condition)
 │   ├── evaluation/
-│   │   ├── metrics.py          # AP@K, AUROC, balanced accuracy, F1, AUCPR
-│   │   └── ap_at_k.py          # AP@K implementation
+│   │   └── metrics.py          # P@K, AUROC, balanced accuracy, F1, AUCPR
 │   ├── prompts/
 │   │   └── templates.py        # Startup profile formatter
 │   └── utils/
@@ -177,28 +183,21 @@ All metrics are computed by `src/evaluation/metrics.py`.
 │       ├── data_splits.py      # Reproducible train/val/test splits
 │       ├── archive.py          # Result archiving utility
 │       └── logging.py          # Log analysis utilities
+│
 ├── notebooks/
+│   ├── EDA_notebook.ipynb               # Exploratory data analysis
+│   ├── colab_experiment_notebook.ipynb  # Colab experiment workflow
+│   ├── colab_textgrad_visualization.ipynb
 │   ├── data_processing.ipynb           # Crunchbase data pipeline
 │   ├── agent_data_quality_audit.ipynb  # Data quality checks
-│   ├── analysis.ipynb                  # Results analysis
 │   ├── output_overview.ipynb           # Predictions overview 
-│   ├── reasoning_explorer.ipynb        # Qualitative reasoning inspection (WIP)
 │   └── textgrad_visualization.ipynb    # TextGrad prompt evolution plots (WIP)
-├── results/
-│   ├── ablation/               # Per-condition predictions, metrics, run info
-│   ├── textgrad_validation/    # TextGrad training logs, prompts, cached assessments
-│   ├── judge_evaluation/       # LLM-as-judge scores
-│   ├── baseline/               # Legacy baseline results
-│   ├── metrics/
-│   └── logs/
+│
 ├── scripts/
-│   ├── run_vc_experiment.sh            # Shell wrapper for experiment runs
-│   ├── test_job.sh                     # Smoke test script
-│   ├── recover_judge_output.py         # Recover partial judge results
 │   └── split_objects_by_entity_type.py # Data preprocessing utility
-├── pyproject.toml
-└── requirements.txt
 ```
+
+Runtime artifacts and large datasets are intentionally excluded from GitHub via `.gitignore`, including `data/`, `results/`, notebook logs/checkpoints, and local environment files.
 
 ## Output Files
 

@@ -209,12 +209,12 @@ The synthesizer aggregates the four specialist outputs:
 
 ## Evaluation Metrics
 
-Primary metric: **AP@K** (Average Precision at K), following Liu et al. Measures how precisely successful startups are ranked in the top-K predictions.
+Primary metric: **P@K** (Precision at K), following Liu et al. (2025). Measures the fraction of successful startups in the top-K predictions ranked by predicted probability.
 
 ```
 compute_metrics(y_true, y_prob) → {
     # Primary
-    "ap_10": ...,  "ap_20": ...,  "ap_30": ...,
+    "p_10": ...,  "p_20": ...,  "p_30": ...,
 
     # Secondary
     "auroc": ...,  "aucpr": ...,
