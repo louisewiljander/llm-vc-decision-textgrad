@@ -178,6 +178,13 @@ def main():
         help="Model name for Ollama (default: glm4:9b). Omit the 'ollama/' prefix.",
     )
     parser.add_argument(
+        "--splits_file", default=None,
+        help=(
+            "Path to data_splits.json if it is not inside --run_dir. "
+            "Useful when the Drive copy of the run dir is missing this file."
+        ),
+    )
+    parser.add_argument(
         "--dry_run", action="store_true",
         help="Check cache coverage without running inference.",
     )
@@ -192,10 +199,14 @@ def main():
     print(f"Cache dir: {cache_dir}")
     print(f"Model:     {args.model} @ {args.ollama_url}")
 
-    # Load val IDs from data_splits.json
-    splits_file = run_dir / "data_splits.json"
+    # Load val IDs from data_splits.json (falls back to --splits_file if provided)
+    splits_file = Path(args.splits_file) if args.splits_file else run_dir / "data_splits.json"
     if not splits_file.exists():
-        sys.exit(f"ERROR: {splits_file} not found.")
+        sys.exit(
+            f"ERROR: {splits_file} not found.\n"
+            f"If data_splits.json is missing from the run dir, pass it explicitly:\n"
+            f"  --splits_file /path/to/local/backup/.../data_splits.json"
+        )
     splits  = json.loads(splits_file.read_text())
     val_ids = [str(i) for i in splits["val_object_ids"]]
     print(f"\nVal set: {len(val_ids)} startups (seed={splits.get('seed')})")
