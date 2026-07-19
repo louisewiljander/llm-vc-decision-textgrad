@@ -109,7 +109,9 @@ def compute_metrics(
     # P@K: fraction of positives in top-K ranked by predicted probability.
     # Comparable to Liu et al. (2025), who report temporal Average P@K
     # (P@K per prediction period, averaged over time).
-    sorted_indices = np.argsort(-y_prob)
+    # Tie-break: kind='stable' breaks ties by input order, which is
+    # deterministic given the fixed split seed and ensures reproducibility.
+    sorted_indices = np.argsort(-y_prob, kind='stable')
     y_true_sorted = y_true[sorted_indices]
     p_at_k = {k: round(float(y_true_sorted[:k].sum()) / k, 4) for k in [10, 20, 30]}
 
