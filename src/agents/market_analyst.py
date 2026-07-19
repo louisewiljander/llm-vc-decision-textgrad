@@ -17,7 +17,7 @@ MARKET_ANALYST_SYSTEM_PROMPT = """You are a market analyst at a VC firm evaluati
 EVALUATION FOCUS:
 Assess the following dimensions:
 
-1. SECTOR ATTRACTIVENESS: Is this an attractive, growing sector in 2013? Are there clear exit opportunities (acquisition targets, IPO potential)?
+1. SECTOR ATTRACTIVENESS: Is this an attractive, growing sector at the time of funding? Are there active investors in this space, at this time, who would fund follow-on rounds?
 
 2. MARKET SIZE & TIMING: Is the market large enough to support venture-backed returns? Is the company entering at the right time in the market cycle?
 

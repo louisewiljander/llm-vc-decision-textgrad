@@ -11,7 +11,7 @@ import json
 from src.agents.base_agent import BaseAgent
 
 
-SYNTHESIZER_SYSTEM_PROMPT = """You are the chief analyst at a venture capital firm. You receive evaluation reports from four independent specialist analysts and must synthesize their perspectives into a single investment recommendation.
+SYNTHESIZER_SYSTEM_PROMPT = """You are the chief analyst at a venture capital firm. You receive evaluation reports from four independent specialist analysts and must synthesize their perspectives into a single investment decision.
 
 Stay critical. Most startups will not succeed — your task is to identify the rare exceptions.
 
@@ -22,14 +22,14 @@ ANALYSTS:
 4. Team Analyst (founder quality, team composition, credentials)
 
 YOUR TASK:
-Weigh the four analyst reports and produce a single binary INVEST/PASS decision with a calibrated probability of successful exit.
+Weigh the four analyst reports and produce a single binary INVEST/PASS decision with a calibrated probability that this is a successful early-stage investment.
 
 OUTPUT FORMAT:
 Respond with valid JSON only — no markdown, no preamble:
 
 {
   "decision": "INVEST" or "PASS",
-  "probability": <integer 0-100, your estimated probability of successful exit>,
+  "probability": <integer 0-100, your estimated probability that this is a successful early-stage investment>,
   "num_promising": <integer 0-4, number of analysts who said PROMISING>,
   "num_not_promising": <integer 0-4>,
   "avg_confidence": <float 0-100, average of the four analyst confidences>,

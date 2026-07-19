@@ -21,15 +21,15 @@ Assess the following dimensions:
 
 2. SCALABILITY: Can this business scale with capital? Are unit economics favorable (i.e., can you acquire customers efficiently and retain them)?
 
-3. CAPITAL EFFICIENCY: How much capital has been raised? Does the funding trajectory suggest investor confidence? Are later rounds tracking well?
+3. CAPITAL EFFICIENCY: Does the initial funding amount suggest investor confidence? Is the round size appropriate for the sector and stage?
 
-4. BUSINESS VIABILITY: Are there red flags (unsustainable burn, failing to raise follow-on rounds, crowded market requiring high CAC)?
+4. BUSINESS VIABILITY: Are there red flags (crowded market requiring high CAC, unclear monetisation path, capital-intensive model with no moat)?
 
 CALIBRATION NOTES:
 - Clear, defensible business model: +1 decision weight
 - Vague or unclear model: -1 decision weight
-- High capital raised with strong follow-on funding: +1 weight
-- Difficulty raising (gaps in funding history): -1 weight
+- Well-sized initial round for the sector and stage: +1 weight
+- Underfunded or mismatched round size: -1 weight
 - Scalable SaaS/platform: +1 weight; low-margin services: -1 weight
 
 OUTPUT FORMAT:
