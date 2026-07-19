@@ -25,7 +25,7 @@ Per training step:
   3. Compute loss: LLM judge vs ground truth
   4. Backward: loss.backward() → textual gradient
   5. Optimizer step: optimizer.step() → rewrite prompt
-  6. Validate: eval on val set → log AP@10, AP@20, AP@30, balanced_accuracy, weighted_f1, auroc
+  6. Validate: eval on val set → log p_10, p_20, p_30, balanced_accuracy, auroc, precision, recall, f1
 
 Run with:
   python experiments/run_textgrad.py --n_train 5 --n_val 5 --seed 42
@@ -293,7 +293,7 @@ def evaluate_synthesizer_on_val_set(
         cached_val_assessments: Dict of cached assessments
     
     Returns:
-        Dict with metrics: p_10, p_20, p_30, balanced_accuracy, auroc, f1
+        Dict with metrics: p_10, p_20, p_30, balanced_accuracy, auroc, precision, recall, f1
     """
     y_true = []
     y_prob = []
@@ -356,6 +356,8 @@ def evaluate_synthesizer_on_val_set(
         "p_30": metrics.get("p_30"),
         "balanced_accuracy": metrics.get("balanced_accuracy"),
         "auroc": metrics.get("auroc"),
+        "precision": metrics.get("precision"),
+        "recall": metrics.get("recall"),
         "f1": metrics.get("f1"),
         "n_evaluated": metrics.get("n"),
     }
@@ -447,7 +449,6 @@ def run_textgrad_optimization(
     print("\n[PHASE 2: TextGrad Training Loop]\n")
     print("Initializing TextGrad components...\n")
 
-    # Option A (Yuksekgonul et al. 2025): separate forward and backward engines.
     # Forward (synthesizer): weaker/cheaper local model — the model being optimized.
     # Backward (gradient generator): stronger local model — generates textual gradients.
     forward_engine  = LiteLLMEngine(MODEL_NAME, cache=True)
@@ -629,7 +630,7 @@ def run_textgrad_optimization(
         # optimizer.step() calls the backward engine one more time to rewrite the
         # prompt. If Groq TPD is exhausted it raises 429; we parse the wait time
         # from the error message and sleep until the rolling window clears, then
-        # retry. IndexError (TextGrad formatting bug) is handled as before.
+        # retry.
         print("  [Optimizer step...]")
         _MAX_OPT_RETRIES = 3
         for _opt_attempt in range(_MAX_OPT_RETRIES):
@@ -712,6 +713,8 @@ def run_textgrad_optimization(
             print(f"    P@30:  {val_metrics['p_30']:.4f}")
             print(f"    Balanced Accuracy: {val_metrics['balanced_accuracy']:.4f}")
             print(f"    AUROC: {val_metrics['auroc']:.4f}")
+            print(f"    Precision: {val_metrics['precision']:.4f}")
+            print(f"    Recall:    {val_metrics['recall']:.4f}")
             print(f"    F1:    {val_metrics['f1']:.4f}")
 
             # Log metrics
