@@ -41,7 +41,7 @@ from src.agents.synthesizer import SynthesizerAgent
 from src.agents.textgrad_synthesizer import TextGradSynthesizer
 from src.evaluation.metrics import compute_metrics, print_metrics
 from src.prompts.templates import format_startup_profile
-from src.utils.data_splits import get_splits
+from src.utils.data_splits import get_splits, get_temporal_splits
 from src.utils.archive import make_run_dir
 
 RESULTS_DIR = Path("results/ablation")
@@ -49,7 +49,7 @@ RESULTS_DIR = Path("results/ablation")
 # Fixed seed for dataset splitting — decoupled from the training/inference seed
 # so that all experiment seeds evaluate on the identical train/val/test partition.
 # Only the model-level randomness (synthesizer temperature, TextGrad trajectory)
-# varies across seeds. Do NOT change this without re-running all experiments.
+# varies across seeds. 
 SPLIT_SEED = 42
 
 
@@ -594,6 +594,34 @@ def main():
         default=None,
         help="Directory to write results (default: results/ablation)",
     )
+    parser.add_argument(
+        "--temporal",
+        action="store_true",
+        default=False,
+        help=(
+            "Use temporal (first-funding-year) splits instead of random stratified splits. "
+            "Pools: train<=2008 / val=2009 / test>=2010. Class ratios (50/50 val, 10/90 test) "
+            "are still enforced by sampling within each temporal pool."
+        ),
+    )
+    parser.add_argument(
+        "--temporal_train_end",
+        type=int,
+        default=2008,
+        help="Temporal split: train pool upper year, inclusive (default: 2008)",
+    )
+    parser.add_argument(
+        "--temporal_val_start",
+        type=int,
+        default=2009,
+        help="Temporal split: val pool lower year, inclusive (default: 2009)",
+    )
+    parser.add_argument(
+        "--temporal_val_end",
+        type=int,
+        default=2009,
+        help="Temporal split: val pool upper year, inclusive (default: 2009)",
+    )
 
     args = parser.parse_args()
     if args.output_dir:
@@ -604,7 +632,15 @@ def main():
 
     # Load splits — always use SPLIT_SEED (not the training seed) so all
     # experiment seeds evaluate on the same train/val/test partition.
-    df_train, df_val, df_test = get_splits(random_state=SPLIT_SEED)
+    if args.temporal:
+        df_train, df_val, df_test = get_temporal_splits(
+            train_end_year=args.temporal_train_end,
+            val_start_year=args.temporal_val_start,
+            val_end_year=args.temporal_val_end,
+            random_state=SPLIT_SEED,
+        )
+    else:
+        df_train, df_val, df_test = get_splits(random_state=SPLIT_SEED)
     split_map = {"train": df_train, "val": df_val, "test": df_test}
     df_eval = split_map[args.split]
 
