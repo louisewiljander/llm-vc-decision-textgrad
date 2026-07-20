@@ -16,9 +16,9 @@ Temporal boundaries (defaults):
   Val pool   : first_funding_at == 2009
   Test pool  : first_funding_at >= 2010
 
-- Test  (natural ~23%): 300 rows drawn from the test pool. The class
-  distribution is natural — no forced ratio — reflecting the ~22.77%
-  success rate of the full dataset.
+- Test  (natural): 300 rows drawn from the test pool. The class
+  distribution is natural — no forced ratio — reflecting the positive rate
+  of the test cohort.
 
 - Val   (50/50): 200 rows — 100 success + 100 failure. Balanced for
   TextGrad optimisation; the gradient signal should see equal examples of
@@ -30,48 +30,31 @@ Temporal boundaries (defaults):
   discarded.
 
 All splits are deterministic given the same random_state.
+
+Contamination exclusions
+------------------------
+Companies for which an LLM contamination probe returned high confidence of
+identification are excluded from the test set and replaced with non-contaminated
+rows from the same temporal pool. The exclusion list is hardcoded below as
+TEST_CONTAMINATION_EXCLUSION_IDS and passed to get_splits() by the experiment
+scripts. It is versioned here rather than in a data file so it survives a fresh
+clone.
 """
 from pathlib import Path
 import pandas as pd
 
 # Resolve paths relative to repo root
-_REPO_ROOT = Path(__file__).parent.parent.parent.resolve()  # Navigate from src/utils/ to repo root
+_REPO_ROOT = Path(__file__).parent.parent.parent.resolve()
 DATA_PATH = str(_REPO_ROOT / "data" / "processed" / "companies_clean.parquet")
-DEFAULT_TEST_CONTAMINATION_EXCLUSIONS = str(_REPO_ROOT / "data" / "processed" / "test_contamination_exclusions.csv")
 
-
-def _load_contamination_exclusions(
-    exclusion_path: str | Path | None,
-) -> set[str]:
-    """
-    Load object IDs to exclude from the test split.
-
-    Args:
-        exclusion_path: Path to a CSV with an 'object_id' column. Every row
-                        in the file is treated as an exclusion — create this
-                        file manually from the contamination probe output.
-                        Pass None (the default) to skip contamination filtering.
-
-    Returns:
-        Set of object_id strings to exclude, or empty set if path is None.
-    """
-    if exclusion_path is None:
-        return set()
-
-    path = Path(exclusion_path)
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Contamination exclusion file not found: {path}\n"
-            "Pass contamination_exclusion_path=None to skip filtering."
-        )
-
-    exclusions = pd.read_csv(path)
-    if "object_id" not in exclusions.columns:
-        raise ValueError(
-            f"Contamination exclusion file {path} must contain an 'object_id' column."
-        )
-
-    return {str(value) for value in exclusions["object_id"].dropna().tolist()}
+# Manually curated contamination exclusions from the pre-run probe.
+# These object_ids were identified by an LLM probe as likely recognisable
+# from their anonymised descriptions and are excluded from the test set.
+TEST_CONTAMINATION_EXCLUSION_IDS: frozenset[str] = frozenset({
+    "c:29988", "c:169785", "c:168546", "c:190390", "c:22316", "c:58387",
+    "c:59349", "c:184924", "c:77507", "c:37817", "c:65630", "c:76658",
+    "c:164076", "c:162506", "c:67880", "c:58432", "c:165258",
+})
 
 
 def get_splits(
@@ -81,7 +64,7 @@ def get_splits(
     train_min_year: int | None = 2005,
     train_end_year: int | None = 2008,
     test_min_year: int | None = 2010,
-    contamination_exclusion_path: str | Path | None = None,
+    exclude_contaminated: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Load and split the processed dataset into train / val / test.
@@ -99,17 +82,19 @@ def get_splits(
                             reproducibility across baseline and TextGrad runs.
         test_size:          Total number of rows in the test set.
         val_size:           Total number of rows in the val set (balanced 50/50).
-        train_min_year:     Inclusive lower year for the train pool. Default: 2005.
-        train_end_year:     Inclusive upper year for the train pool. Companies
-                            with first_funding_at <= this year (or null) go to
-                            train. Set None alongside test_min_year=None to
-                            disable all temporal constraints.
+        train_min_year:     Inclusive lower year for the train pool. Companies
+                            with first_funding_at < this year are excluded as
+                            data-quality outliers. Default: 2005.
+        train_end_year:     Inclusive upper year for the train pool. Set None
+                            alongside test_min_year=None to disable temporal
+                            constraints entirely.
         test_min_year:      Inclusive lower year for the test pool. The val pool
                             spans (train_end_year, test_min_year) exclusively.
                             Set None to disable temporal constraints.
-        contamination_exclusion_path:
-                            Optional CSV containing object_id values to exclude
-                            from the test split after contamination probing.
+        exclude_contaminated:
+                            If True (default), remove TEST_CONTAMINATION_EXCLUSION_IDS
+                            from the test set and replace with clean rows from the
+                            same temporal pool.
 
     Returns:
         (df_train, df_val, df_test) — three non-overlapping DataFrames.
@@ -129,17 +114,16 @@ def get_splits(
         test_pool  = df[funding_year >= test_min_year]
         val_pool   = df[(funding_year > train_end_year) & (funding_year < test_min_year)]
         # Train pool: train_min_year <= first_funding_at <= train_end_year.
+        # Null first_funding_at rows are absent — the notebook drops them before saving.
         train_mask = (funding_year <= train_end_year)
         if train_min_year is not None:
             train_mask = train_mask & (funding_year >= train_min_year)
         train_pool = df[train_mask]
-        late_remainder = pd.DataFrame(columns=df.columns)
     else:
         # No temporal constraints — sample test randomly, val/train from remainder.
         test_pool  = df
-        val_pool   = None   # determined after test sampling below
+        val_pool   = None
         train_pool = None
-        late_remainder = pd.DataFrame(columns=df.columns)
 
     # ------------------------------------------------------------------ Test
     if test_min_year is not None and train_end_year is not None:
@@ -155,45 +139,36 @@ def get_splits(
         val_pool   = remaining
         train_pool = remaining
 
-    # ----------- Contamination exclusions (optional, test set only) ----------
-    excluded_test_ids = _load_contamination_exclusions(contamination_exclusion_path)
-    if excluded_test_ids:
-        if "object_id" not in df_test.columns:
-            print(
-                "Warning: contamination exclusions found but object_id column missing; "
-                "skipping test-set contamination filtering."
+    # ----------- Contamination exclusions (test set only) --------------------
+    if exclude_contaminated and TEST_CONTAMINATION_EXCLUSION_IDS:
+        contaminated_mask = df_test["object_id"].astype(str).isin(
+            TEST_CONTAMINATION_EXCLUSION_IDS
+        )
+        n_excluded = int(contaminated_mask.sum())
+
+        if n_excluded:
+            df_test = df_test.loc[~contaminated_mask].copy()
+
+            replacement_pool = test_pool.drop(index=df_test.index)
+            available = replacement_pool.loc[
+                ~replacement_pool["object_id"].astype(str).isin(
+                    TEST_CONTAMINATION_EXCLUSION_IDS
+                )
+            ]
+
+            if len(available) < n_excluded:
+                raise ValueError(
+                    "Not enough non-contaminated rows remain to rebuild the test split."
+                )
+
+            replacements = available.sample(n=n_excluded, random_state=random_state)
+            df_test = pd.concat([df_test, replacements]).sample(
+                frac=1, random_state=random_state
             )
-        else:
-            contaminated_mask = df_test["object_id"].astype(str).isin(excluded_test_ids)
-            n_test_excluded = int(contaminated_mask.sum())
 
-            if n_test_excluded:
-                contaminated = df_test.loc[contaminated_mask].copy()
-                df_test = df_test.loc[~contaminated_mask].copy()
-
-                # Replacements come from the test pool (same temporal cohort).
-                replacement_pool = test_pool.drop(index=df_test.index)
-                available = replacement_pool.loc[
-                    ~replacement_pool["object_id"].astype(str).isin(excluded_test_ids)
-                ]
-
-                if len(available) < n_test_excluded:
-                    raise ValueError(
-                        "Not enough non-contaminated rows remain to rebuild the test split."
-                    )
-
-                replacements = available.sample(n=n_test_excluded, random_state=random_state)
-                df_test = pd.concat([df_test, replacements]).sample(
-                    frac=1, random_state=random_state
-                )
-
-                print(
-                    f"  Contamination probe exclusions applied: {n_test_excluded} test rows "
-                    f"removed and replaced."
-                )
+            print(f"  Contamination exclusions applied: {n_excluded} test rows removed and replaced.")
 
     # ------------------------------------------------------------------- Val
-    # Val is sampled from the year band (train_end_year, test_min_year).
     val_pos_pool = val_pool[val_pool["target"] == 1]
     val_neg_pool = val_pool[val_pool["target"] == 0]
 
@@ -209,8 +184,6 @@ def get_splits(
     df_val = pd.concat([val_pos, val_neg]).sample(frac=1, random_state=random_state)
 
     # ----------------------------------------------------------------- Train
-    # Train pool is strictly <= train_end_year (late remainder is not used).
-    # Undersample the majority class to balance.
     train_pool = train_pool.drop(index=[i for i in df_val.index if i in train_pool.index])
     remaining_pos = train_pool[train_pool["target"] == 1]
     remaining_neg = train_pool[train_pool["target"] == 0]
@@ -248,7 +221,5 @@ def _print_summary(
     print(f"  (Rows discarded from train to enforce balance: {n_discarded})")
 
 
-
 if __name__ == "__main__":
-    # Default: test from first_funding_at >= 2010, natural class distribution
     train, val, test = get_splits()
