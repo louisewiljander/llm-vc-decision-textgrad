@@ -12,7 +12,7 @@ extends past the 2013 Crunchbase snapshot.
 Split design
 ------------
 Temporal boundaries (defaults):
-  Train pool : first_funding_at <= 2008  (or null)
+  Train pool : 2005 <= first_funding_at <= 2008
   Val pool   : first_funding_at == 2009
   Test pool  : first_funding_at >= 2010
 
@@ -43,11 +43,27 @@ DEFAULT_TEST_CONTAMINATION_EXCLUSIONS = str(_REPO_ROOT / "data" / "processed" / 
 def _load_contamination_exclusions(
     exclusion_path: str | Path | None,
 ) -> set[str]:
-    """Load object IDs that should be excluded from the test split."""
-    path = Path(exclusion_path) if exclusion_path is not None else Path(DEFAULT_TEST_CONTAMINATION_EXCLUSIONS)
+    """
+    Load object IDs to exclude from the test split.
 
-    if not path.exists():
+    Args:
+        exclusion_path: Path to a CSV with an 'object_id' column. Every row
+                        in the file is treated as an exclusion — create this
+                        file manually from the contamination probe output.
+                        Pass None (the default) to skip contamination filtering.
+
+    Returns:
+        Set of object_id strings to exclude, or empty set if path is None.
+    """
+    if exclusion_path is None:
         return set()
+
+    path = Path(exclusion_path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Contamination exclusion file not found: {path}\n"
+            "Pass contamination_exclusion_path=None to skip filtering."
+        )
 
     exclusions = pd.read_csv(path)
     if "object_id" not in exclusions.columns:
@@ -62,6 +78,7 @@ def get_splits(
     random_state: int = 42,
     test_size: int = 300,
     val_size: int = 200,
+    train_min_year: int | None = 2005,
     train_end_year: int | None = 2008,
     test_min_year: int | None = 2010,
     contamination_exclusion_path: str | Path | None = None,
@@ -70,7 +87,7 @@ def get_splits(
     Load and split the processed dataset into train / val / test.
 
     Three temporally ordered pools are defined by first_funding_at year:
-      Train pool : <= train_end_year  (or null first_funding_at)
+      Train pool : train_min_year <= first_funding_at <= train_end_year
       Val pool   : (train_end_year, test_min_year) exclusive
       Test pool  : >= test_min_year
 
@@ -82,6 +99,7 @@ def get_splits(
                             reproducibility across baseline and TextGrad runs.
         test_size:          Total number of rows in the test set.
         val_size:           Total number of rows in the val set (balanced 50/50).
+        train_min_year:     Inclusive lower year for the train pool. Default: 2005.
         train_end_year:     Inclusive upper year for the train pool. Companies
                             with first_funding_at <= this year (or null) go to
                             train. Set None alongside test_min_year=None to
@@ -110,7 +128,11 @@ def get_splits(
         funding_year = pd.to_datetime(df["first_funding_at"], errors="coerce").dt.year
         test_pool  = df[funding_year >= test_min_year]
         val_pool   = df[(funding_year > train_end_year) & (funding_year < test_min_year)]
-        train_pool = df[(funding_year <= train_end_year) | funding_year.isna()]
+        # Train pool: train_min_year <= first_funding_at <= train_end_year.
+        train_mask = (funding_year <= train_end_year)
+        if train_min_year is not None:
+            train_mask = train_mask & (funding_year >= train_min_year)
+        train_pool = df[train_mask]
         late_remainder = pd.DataFrame(columns=df.columns)
     else:
         # No temporal constraints — sample test randomly, val/train from remainder.
