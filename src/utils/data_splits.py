@@ -38,12 +38,18 @@ identification are excluded from the test set. The exclusion list is hardcoded b
 TEST_CONTAMINATION_EXCLUSION_IDS. It is versioned here rather than in a data
 file so it survives a fresh clone.
 """
+import json
 from pathlib import Path
 import pandas as pd
 
 # Resolve paths relative to repo root
 _REPO_ROOT = Path(__file__).parent.parent.parent.resolve()
 DATA_PATH = str(_REPO_ROOT / "data" / "processed" / "companies_clean.parquet")
+
+# Round types that disqualify a company from the early-stage definition
+LATE_STAGE_ROUND_TYPES: frozenset[str] = frozenset({
+    "series-a", "series-b", "series-c+", "private-equity", "post-ipo",
+})
 
 # Manually curated contamination exclusions from the pre-run probe.
 # These object_ids were identified by an LLM probe as likely recognisable
@@ -55,6 +61,21 @@ TEST_CONTAMINATION_EXCLUSION_IDS: frozenset[str] = frozenset({
 })
 
 
+def _get_first_round_type(row: pd.Series) -> str | None:
+    """Return the type string of the earliest funding round, or None."""
+    rd = row.get("funding_round_details")
+    if not rd or (isinstance(rd, float) and pd.isna(rd)):
+        return None
+    if isinstance(rd, str):
+        try:
+            rd = json.loads(rd)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    if not isinstance(rd, list) or len(rd) == 0:
+        return None
+    return rd[0].get("type", None)
+
+
 def get_splits(
     random_state: int = 42,
     test_size: int = 300,
@@ -63,6 +84,7 @@ def get_splits(
     train_end_year: int | None = 2008,
     test_min_year: int | None = 2010,
     exclude_contaminated: bool = True,
+    early_stage_only: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Load and split the processed dataset into train / val / test.
@@ -93,6 +115,9 @@ def get_splits(
                             If True (default), remove TEST_CONTAMINATION_EXCLUSION_IDS
                             from the test set. Removed rows are not replaced, so the
                             returned test set may be smaller than test_size.
+        early_stage_only:   If True (default), restrict to early-stage companies. Excludes
+                            LATE_STAGE_ROUND_TYPES from the full dataset before
+                            forming any pool.
 
     Returns:
         (df_train, df_val, df_test) — three non-overlapping DataFrames.
@@ -101,6 +126,14 @@ def get_splits(
         ValueError: If any pool is too small for the requested sample sizes.
     """
     df = pd.read_parquet(DATA_PATH)
+
+    # ----------- Early-stage filter ---------------------
+    if early_stage_only:
+        first_round_types = df.apply(_get_first_round_type, axis=1)
+        late_mask = first_round_types.isin(LATE_STAGE_ROUND_TYPES)
+        n_late = int(late_mask.sum())
+        df = df[~late_mask].copy()
+        print(f"  Early-stage filter: {n_late} companies removed (first round Series A or beyond).")
 
     # ------------------------------------------------------------------ Pools
     if test_min_year is not None and train_end_year is not None:
