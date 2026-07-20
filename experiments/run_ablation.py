@@ -41,7 +41,7 @@ from src.agents.synthesizer import SynthesizerAgent
 from src.agents.textgrad_synthesizer import TextGradSynthesizer
 from src.evaluation.metrics import compute_metrics, print_metrics
 from src.prompts.templates import format_startup_profile
-from src.utils.data_splits import get_splits, get_temporal_splits
+from src.utils.data_splits import get_splits
 from src.utils.archive import make_run_dir
 
 RESULTS_DIR = Path("results/ablation")
@@ -632,15 +632,8 @@ def main():
 
     # Load splits — always use SPLIT_SEED (not the training seed) so all
     # experiment seeds evaluate on the same train/val/test partition.
-    if args.temporal:
-        df_train, df_val, df_test = get_temporal_splits(
-            train_end_year=args.temporal_train_end,
-            val_start_year=args.temporal_val_start,
-            val_end_year=args.temporal_val_end,
-            random_state=SPLIT_SEED,
-        )
-    else:
-        df_train, df_val, df_test = get_splits(random_state=SPLIT_SEED)
+    # Temporal boundaries (train<=2008, val=2009, test>=2010) are built into get_splits().
+    df_train, df_val, df_test = get_splits(random_state=SPLIT_SEED)
     split_map = {"train": df_train, "val": df_val, "test": df_test}
     df_eval = split_map[args.split]
 

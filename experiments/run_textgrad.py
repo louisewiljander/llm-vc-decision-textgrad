@@ -244,7 +244,7 @@ Respond with valid JSON only — no markdown, no preamble:
 
 {
   "decision": "INVEST" or "PASS",
-  "probability": <integer 0-100, your estimated probability of successful exit>,
+  "probability": <integer 0-100, your estimated probability that this is a successful early-stage investment>,
   "num_promising": <integer 0-4, number of analysts who said PROMISING>,
   "num_not_promising": <integer 0-4>,
   "avg_confidence": <float 0-100, average of the four analyst confidences>,
