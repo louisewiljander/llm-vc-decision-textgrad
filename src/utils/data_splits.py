@@ -34,11 +34,9 @@ All splits are deterministic given the same random_state.
 Contamination exclusions
 ------------------------
 Companies for which an LLM contamination probe returned high confidence of
-identification are excluded from the test set and replaced with non-contaminated
-rows from the same temporal pool. The exclusion list is hardcoded below as
-TEST_CONTAMINATION_EXCLUSION_IDS and passed to get_splits() by the experiment
-scripts. It is versioned here rather than in a data file so it survives a fresh
-clone.
+identification are excluded from the test set. The exclusion list is hardcoded below as
+TEST_CONTAMINATION_EXCLUSION_IDS. It is versioned here rather than in a data
+file so it survives a fresh clone.
 """
 from pathlib import Path
 import pandas as pd
@@ -93,8 +91,8 @@ def get_splits(
                             Set None to disable temporal constraints.
         exclude_contaminated:
                             If True (default), remove TEST_CONTAMINATION_EXCLUSION_IDS
-                            from the test set and replace with clean rows from the
-                            same temporal pool.
+                            from the test set. Removed rows are not replaced, so the
+                            returned test set may be smaller than test_size.
 
     Returns:
         (df_train, df_val, df_test) — three non-overlapping DataFrames.
@@ -148,25 +146,7 @@ def get_splits(
 
         if n_excluded:
             df_test = df_test.loc[~contaminated_mask].copy()
-
-            replacement_pool = test_pool.drop(index=df_test.index)
-            available = replacement_pool.loc[
-                ~replacement_pool["object_id"].astype(str).isin(
-                    TEST_CONTAMINATION_EXCLUSION_IDS
-                )
-            ]
-
-            if len(available) < n_excluded:
-                raise ValueError(
-                    "Not enough non-contaminated rows remain to rebuild the test split."
-                )
-
-            replacements = available.sample(n=n_excluded, random_state=random_state)
-            df_test = pd.concat([df_test, replacements]).sample(
-                frac=1, random_state=random_state
-            )
-
-            print(f"  Contamination exclusions applied: {n_excluded} test rows removed and replaced.")
+            print(f"  Contamination exclusions applied: {n_excluded} test rows removed (test_size now {len(df_test)}).")
 
     # ------------------------------------------------------------------- Val
     val_pos_pool = val_pool[val_pool["target"] == 1]
